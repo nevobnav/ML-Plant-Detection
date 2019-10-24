@@ -22,14 +22,8 @@ for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
 
-# img_path = '/home/duncan/Documents/VanBoven/Orthomosaics/c01_verdonk-Rijweg stalling 2-201907170908-GR_cropped.tif'
-# dem_path = '/home/duncan/Documents/VanBoven/Orthomosaics/c01_verdonk-Rijweg stalling 2-201907170908_DEM-GR.tif'
-
-# img_path = '/home/duncan/Documents/VanBoven/Orthomosaics/c01_verdonk-Wever oost-201907240707-GR_cropped.tif'
-# dem_path = '/home/duncan/Documents/VanBoven/Orthomosaics/c01_verdonk-Wever oost-201907240707_DEM-GR.tif'
-
-img_path = '/home/duncan/Documents/VanBoven/Orthomosaics/c08_biobrass-C49-201906151558-GR_cropped.tif'
-dem_path = '/home/duncan/Documents/VanBoven/Orthomosaics/c08_biobrass-C49-201906151558_DEM-GR.tif'
+img_path = './c01_verdonk-Rijweg stalling 2-201907170908-GR_cropped.tif'
+dem_path = './c01_verdonk-Rijweg stalling 2-201907170908_DEM-GR.tif'
 
 dem_functions 	 = dem_functions.get_functions(img_path, dem_path)		# functions to jump between color image and heightmap
 get_window 		 = dem_functions['get_window']							
