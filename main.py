@@ -14,8 +14,8 @@ import dem_functions
 import settings
 
 #================================================= Crop Type =================================================
-crop = 'lettuce'														# which crop is present in field
-params = settings.get_settings(crop, block_size=1000)
+crop = 'ijsberg'														# which crop is present in field
+params = settings.get_settings(crop)
 
 #============================================== Get Parameters ===============================================
 for param in params.keys():												# load all non-string parameters
@@ -38,42 +38,31 @@ dem_scale_factor = dem_functions['scale_factor']						# constant
 box_model  = ker_models.load_model(params['detection_model_path'])
 mask_model = ker_models.load_model(params['masking_model_path'])
 
-#================================================ Functions ==================================================
+#============================================ Model functions ===============================================
 def pop(x, k): 
 	"""Removes the k-th element of the array x. Removal is not done in-place, to update x, use x=pop(x,k)."""
 	k = k%x.shape[0] 
 	return np.concatenate((x[:k], x[k+1:])) 
 
-def run(c_im, h_im, padding=0):
-	"""Run complete model on the block c_im and its corresponding height block h_im."""
-	empty_output = np.zeros((c_im.shape[0], c_im.shape[1])), np.array([]), np.array([])			# if at some point there are no more boxes, return this
-	c_size = box_size
-	h_size = int(np.round(dem_scale_factor*c_size))
-
-	print('Block size: {}x{}'.format(c_im.shape[0], c_im.shape[1]))
-	c_coords = proc.window_hotspots_centers(c_im, sigma=sigma, padding=padding, top_left=0)		# run region proposer				
+def create_boxes(c_coords):
+	h_size = int(np.round(dem_scale_factor*box_size))
 	h_coords = np.round(dem_scale_factor*c_coords).astype(int) 									# convert to DEM row/col
-
 	c_rects = np.zeros((c_coords.shape[0], 4), dtype=int)
 	h_rects = np.zeros((h_coords.shape[0], 4), dtype=int)
-
-	c_rects[:,0] = c_coords[:,1] - c_size//2
-	c_rects[:,1] = c_coords[:,0] - c_size//2
-	c_rects[:,2] = c_size
-	c_rects[:,3] = c_size
-
+	c_rects[:,0] = c_coords[:,1] - box_size//2
+	c_rects[:,1] = c_coords[:,0] - box_size//2
+	c_rects[:,2] = box_size
+	c_rects[:,3] = box_size
 	h_rects[:,0] = h_coords[:,1] - h_size//2
 	h_rects[:,1] = h_coords[:,0] - h_size//2
 	h_rects[:,2] = h_size
 	h_rects[:,3] = h_size
+	return c_rects, h_rects
 
-	num_candidates = c_rects.shape[0]														# number of rectangles to be analyzed
-	if num_candidates==0:
-		return empty_output
-
+def create_crops(c_im, h_im, c_rects, h_rects):
+	num_candidates = c_rects.shape[0]
 	c_crops = np.zeros((num_candidates, c_box[0], c_box[1], 3), dtype=np.uint8)		# initialize tensors
 	h_crops = np.zeros((num_candidates, h_box[0], h_box[1], 1), dtype=np.uint8)
-
 	for i in range(num_candidates):
 		x_c, y_c, w_c, h_c = c_rects[i,:]
 		x_h, y_h, w_h, h_h = h_rects[i,:]
@@ -86,58 +75,49 @@ def run(c_im, h_im, padding=0):
 			h_crops[i,:,:,0] = h_crop
 		except:
 			raise IndexError('cropping failed with c_rect = ({}, {}, {}, {}), h_rect=({}, {}, {}, {})'.format(x_c, y_c, w_c, h_c, x_h, y_h, w_h, h_h))
+	return c_crops, h_crops
 
-	predictions = box_model.predict([c_crops, h_crops], verbose=1)							# run classification model
-	(back_rects, back_probs), (pre_broc_rects, pre_broc_probs) = proc.sort_into_classes(c_rects, predictions)
-	broc_rects, broc_probs = proc.non_max_suppression(pre_broc_rects, probs=pre_broc_probs, t=overlap_threshold)
+def run(c_im, h_im, padding=0):
+	"""Run complete model on the block c_im and its corresponding height block h_im."""	
+	c_coords = proc.window_hotspots_centers(c_im, sigma=sigma, padding=padding, top_left=0)		# run region proposer
+	c_rects, h_rects = create_boxes(c_coords)				
+	c_crops, h_crops = create_crops(c_im, h_im, c_rects, h_rects)
 
-	if len(broc_rects)==0:
-		return empty_output
-	masks = proc.get_masks(broc_rects, c_im, mask_model, verbose=1)
+	predictions = box_model.predict([c_crops, h_crops], verbose=1)								# run classification model
+	broc_rects, broc_probs = proc.sort_into_classes(c_rects, predictions)
+	broc_rects, broc_probs = proc.non_max_suppression(broc_rects, probs=broc_probs, t=overlap_threshold)
+	masks = proc.get_masks(broc_rects, c_im, mask_model, verbose=1)								# compute masks for each box
 
 	if filter_masks:
 		broc_rects, broc_probs, masks = proc.discard_empty(broc_rects, broc_probs, masks, t=crop_size_threshold)
-		if len(broc_rects)==0:
-			return empty_output
 
 	if filter_disjoint:
 		masks = proc.remove_unconnected_components(masks)
 
 	if recenter:
-		broc_rects, altered = proc.recenter_boxes(broc_rects, masks, d=center_distance)		# indeces of moved boxes
-		if len(broc_rects)==0:
-			return empty_output
-		new_masks = proc.get_masks(broc_rects[altered], c_im, mask_model, verbose=1)		# compute new masks of moved boxes
+		broc_rects, altered = proc.recenter_boxes(broc_rects, masks, d=center_distance)			# indeces of moved boxes
+		new_masks = proc.get_masks(broc_rects[altered], c_im, mask_model, verbose=1)			# compute new masks of moved boxes
 		if filter_disjoint:
 			new_masks = proc.remove_unconnected_components(new_masks)
-		masks[altered] = new_masks															# set new masks
+		masks[altered] = new_masks																# set new masks
 		if filter_masks:
 			broc_rects, broc_probs, masks = proc.discard_empty(broc_rects, broc_probs, masks, t=crop_size_threshold)
-	if len(broc_rects)==0:
-		return empty_output
 
-	big_mask  = proc.create_big_mask(c_im, broc_rects, masks)
 	contours  = proc.find_contours(broc_rects, masks)
 	centroids = proc.find_centroids(broc_rects, masks)
 
-	return big_mask, contours, centroids
+	return contours, centroids
 
-def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=np.infty):
-	"""Writes 3 shapefiles: out_name_CONTOURS, out_name_LINES, out_name_POINTS, which respectively contain crop
-	contours, block shape and crop centroids. The tif is divided into blocks of size block_size. Two adjacent blocks
-	have overlap of 2*block_overlap. Duplicates in the overlap region are removed using KDTrees. The parameter 
-	max_count is included for debug purposes; the process is terminated after max_count blocks."""
+def run_block(block_size, block_overlap=box_size, max_count=np.infty):
+	"""Perform model on img_path by dividing it into blocks."""
 	tif = rasterio.open(img_path)
-	profile  = tif.profile.copy()
-	trans    = tif.transform
 	num_cols = tif.width//block_size
 	num_rows = tif.height//block_size
 	tif.close()
 
-	count = 0
-	padding = box_size
 	data_dict = dict()
 
+	count = 0
 	for i in range(0,num_rows+1):
 		for j in range(0,num_cols+1):
 			try:
@@ -146,27 +126,29 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 				if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
 					continue
 			except:
+				print('Block ({},{}) too small'.format(i,j))
 				continue
 
 			try:
-				mask, contours, centroids = run(c_im, h_im, padding=padding)
+				print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
+				contours, centroids = run(c_im, h_im, padding=box_size)
 			except:
-				mask, contours, centroids = np.zeros((c_im.shape[0], c_im.shape[1])), np.array([]), np.array([])			
+				contours, centroids = np.array([]), np.array([])			
 
 			data_dict[(i,j)] = {'contours':contours, 'centroids':centroids, 'block':(i_ad, j_ad, height, width)}
 
 			count += 1
-			print('Block ({},{}) complete: {}/{}\n'.format(i, j, count, (num_cols+1)*(num_rows+1)))
+			print('Block ({},{}) complete: {}/{}\n'.format(i, j, count, (num_cols+1)*(num_rows+1)+1))
 
 			if count >= max_count:
 				break
 		if count >= max_count:
 			break
 
-	schema_lines = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
-	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' } }
-	schema_cnt   = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
+	return data_dict
 
+def remove_duplicates(data_dict, block_overlap):
+	"""Uses KDTree to remove duplicates in overlapping regions between two adjacent blocks."""
 	for (i,j) in data_dict.keys():
 		contours  = data_dict[(i,j)]['contours']
 		centroids = data_dict[(i,j)]['centroids']
@@ -209,7 +191,27 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 		data_dict[(i,j)]['contours']  = contours 						# update contours & centroids
 		data_dict[(i,j)]['centroids'] = centroids
 		print('Removed duplicates from block ({},{})'.format(i,j))
-	print()
+	return data_dict
+
+#============================================ Output writer ===============================================
+def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=np.infty):
+	"""Writes 3 shapefiles: CONTOURS.shp, BLOCK_LINES.shp, POINTS.shp, which respectively contain crop
+	contours, block shapes and crop centroids. The tif is divided into overlapping blocks of size block_size+2*block_overlap. 
+	Duplicates in the overlap region are removed using KDTrees. The parameter max_count is included for debug purposes; 
+	the process is terminated after max_count blocks."""
+	tif = rasterio.open(img_path)
+	profile  = tif.profile.copy()
+	trans    = tif.transform
+	num_cols = tif.width//block_size
+	num_rows = tif.height//block_size
+	tif.close()
+
+	data_dict = run_block(block_size, block_overlap, max_count=max_count)
+	data_dict = remove_duplicates(data_dict, block_overlap)
+
+	schema_lines = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
+	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' } }
+	schema_cnt   = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
 
 	with collection(out_dir+'CONTOURS.shp', "w", "ESRI Shapefile", schema_cnt) as output_cnt:
 		with collection(out_dir+'POINTS.shp', "w", "ESRI Shapefile", schema_pnt) as output_pnt:
@@ -249,6 +251,6 @@ if __name__ == "__main__":
 	out_directory = 'PLANT COUNT - '+img_name+'/'
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=20)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=6)
 
 

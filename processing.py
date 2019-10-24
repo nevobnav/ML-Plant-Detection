@@ -14,7 +14,6 @@ from scipy.spatial import Delaunay
 from skimage.feature import peak_local_max
 
 # ========================================= Region Proposal =============================================
-
 def window_hotspots_centers(im, sigma=3.6, padding=0, m=2, top_left=0):
 	"""RoI generator based on local minima of (u+v)-channel."""
 	if padding > 0:
@@ -33,7 +32,6 @@ def window_hotspots_centers(im, sigma=3.6, padding=0, m=2, top_left=0):
 	return coords+padding
 
 # =========================================== Box filters ===============================================
-
 def sort_into_classes(rects, predictions, weeds=False):
 	"""Sort bounding boxes into the class broccoli, background (."""
 	num_candidates = predictions.shape[0]
@@ -58,8 +56,7 @@ def sort_into_classes(rects, predictions, weeds=False):
 			weed_rects.append(rects[i,:])
 			weed_prob.append(predictions[i,pred_index])
 
-	return (np.array(back_rects), np.array(back_prob)), \
-		   (np.array(broc_rects), np.array(broc_prob))
+	return np.array(broc_rects), np.array(broc_prob)
 		   # (np.array(weed_rects), np.array(weed_prob))
 
 def non_max_suppression(boxes, probs=[], t=0.2):
@@ -91,7 +88,6 @@ def non_max_suppression(boxes, probs=[], t=0.2):
 		return boxes[pick]
 
 # ======================================= Masking Functions ===========================================
-
 def get_masks(rects, c_im, model, verbose=1):
 	"""Computes mask for each box in rects using a FCN given by pre-loaded model.
 	Returns a (N, w, h) tensor, where each slice [i,:,:] is a binary image, and N is the length of rects."""
@@ -182,7 +178,6 @@ def find_centroids(rects, masks):
 	return centroids
 
 # ======================================= Experimental ===========================================
-
 def create_big_mask(c_im, rects, masks):
 	"""Creates a binary image (mask) of size c_im.shape that incorporates each mask in masks. Only use for
 	testing purposes, since overlapping masks are merged."""
