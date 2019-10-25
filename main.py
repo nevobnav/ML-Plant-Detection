@@ -2,19 +2,22 @@
 #================================================== Imports ==================================================
 import os
 import cv2
-import tensorflow.keras.models as ker_models
+from pathlib import Path, PureWindowsPath
+import keras.models as ker_models
 import rasterio
 from shapely.geometry import Polygon, Point, mapping
 from scipy.spatial import KDTree
 from fiona import collection
-import numpy as np 
+from fiona.crs import from_epsg
+import numpy as np
 
 import processing as proc
 import dem_functions
 import settings
 
 #================================================= Crop Type =================================================
-crop = 'ijsberg'														# which crop is present in field
+platform = 'windows'
+crop = 'broccoli'														# which crop is present in field
 params = settings.get_settings(crop)
 
 #============================================== Get Parameters ===============================================
@@ -22,21 +25,36 @@ for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
 
-img_path = './c01_verdonk-Rijweg stalling 2-201907170908-GR_cropped.tif'
-dem_path = './c01_verdonk-Rijweg stalling 2-201907170908_DEM-GR.tif'
+img_path = r"D:\VanBovenDrive\VanBoven MT\Archive\c01_verdonk\Wever west\20190717\0749\Orthomosaic\c01_verdonk-Wever west-20190717.tif"
+dem_path = r"D:\VanBovenDrive\VanBoven MT\Archive\c01_verdonk\Wever west\20190717\0749\Orthomosaic\c01_verdonk-Wever west-20190717_DEM.tif"
 
 dem_functions 	 = dem_functions.get_functions(img_path, dem_path)		# functions to jump between color image and heightmap
-get_window 		 = dem_functions['get_window']							
+get_window 		 = dem_functions['get_window']
 dem_scale_factor = dem_functions['scale_factor']						# constant
 
-box_model  = ker_models.load_model(params['detection_model_path'])
-mask_model = ker_models.load_model(params['masking_model_path'])
+def load(path):
+	name = path.split(r'\\')[-1].split('.')[0]
+	with open(path, 'r') as f:
+		json_string = f.read()
+	new_model = ker_models.model_from_json(json_string)
+	new_model.load_weights(path.split('.')[0]+'_weights.h5')
+	return new_model
+
+if platform == 'linux':
+	box_model  = ker_models.load_model(params['detection_model_path'])
+	mask_model = ker_models.load_model(params['masking_model_path'])
+elif platform == 'windows':
+	from keras.utils import CustomObjectScope
+	from keras.initializers import glorot_uniform
+	with CustomObjectScope({'GlorotUniform': glorot_uniform()}):
+		box_model = load(params['detection_model_path'].replace('h5','json').replace('/', r'\\'))
+		mask_model = load(params['masking_model_path'].replace('h5','json').replace('/', r'\\'))
 
 #============================================ Model functions ===============================================
-def pop(x, k): 
+def pop(x, k):
 	"""Removes the k-th element of the array x. Removal is not done in-place, to update x, use x=pop(x,k)."""
-	k = k%x.shape[0] 
-	return np.concatenate((x[:k], x[k+1:])) 
+	k = k%x.shape[0]
+	return np.concatenate((x[:k], x[k+1:]))
 
 def create_boxes(c_coords):
 	h_size = int(np.round(dem_scale_factor*box_size))
@@ -72,9 +90,9 @@ def create_crops(c_im, h_im, c_rects, h_rects):
 	return c_crops, h_crops
 
 def run(c_im, h_im, padding=0):
-	"""Run complete model on the block c_im and its corresponding height block h_im."""	
+	"""Run complete model on the block c_im and its corresponding height block h_im."""
 	c_coords = proc.window_hotspots_centers(c_im, sigma=sigma, padding=padding, top_left=0)		# run region proposer
-	c_rects, h_rects = create_boxes(c_coords)				
+	c_rects, h_rects = create_boxes(c_coords)
 	c_crops, h_crops = create_crops(c_im, h_im, c_rects, h_rects)
 
 	predictions = box_model.predict([c_crops, h_crops], verbose=1)								# run classification model
@@ -112,10 +130,10 @@ def run_block(block_size, block_overlap=box_size, max_count=np.infty):
 	data_dict = dict()
 
 	count = 0
-	for i in range(0,num_rows+1):
-		for j in range(0,num_cols+1):
+	for i in range(10,num_rows+1):				###
+		for j in range(8,20):#num_cols+1):
 			try:
-				c_im, h_im, (i_ad, j_ad, height, width) = get_window(i*block_size-block_overlap, j*block_size-block_overlap, 
+				c_im, h_im, (i_ad, j_ad, height, width) = get_window(i*block_size-block_overlap, j*block_size-block_overlap,
 																	 block_size+2*block_overlap, block_size+2*block_overlap)
 				if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
 					continue
@@ -123,11 +141,11 @@ def run_block(block_size, block_overlap=box_size, max_count=np.infty):
 				print('Block ({},{}) too small'.format(i,j))
 				continue
 
-			try:
-				print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
-				contours, centroids = run(c_im, h_im, padding=box_size)
-			except:
-				contours, centroids = np.array([]), np.array([])			
+			# try:
+			print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
+			contours, centroids = run(c_im, h_im, padding=box_size)
+			# except:
+			# 	contours, centroids = np.array([]), np.array([])
 
 			data_dict[(i,j)] = {'contours':contours, 'centroids':centroids, 'block':(i_ad, j_ad, height, width)}
 
@@ -148,7 +166,7 @@ def remove_duplicates(data_dict, block_overlap):
 		centroids = data_dict[(i,j)]['centroids']
 		(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
 
-		if j>0 and len(centroids)>0:									# check against east block for duplicates
+		if j>0 and (i,j-1) in data_dict and len(centroids)>0:									# check against east block for duplicates
 			east_contours  = data_dict[(i,j-1)]['contours']
 			east_centroids = data_dict[(i,j-1)]['centroids']
 			width_east     = data_dict[(i,j-1)]['block'][3]
@@ -165,7 +183,7 @@ def remove_duplicates(data_dict, block_overlap):
 					centroids = pop(centroids, k)
 					contours.pop(k)
 
-		if i>0 and len(centroids)>0:									# check against north block for duplicates
+		if i>0 and (i-1,j) in data_dict and len(centroids)>0:									# check against north block for duplicates
 			north_contours  = data_dict[(i-1,j)]['contours']
 			north_centroids = data_dict[(i-1,j)]['centroids']
 			height_north    = data_dict[(i-1,j)]['block'][2]
@@ -185,13 +203,14 @@ def remove_duplicates(data_dict, block_overlap):
 		data_dict[(i,j)]['contours']  = contours 						# update contours & centroids
 		data_dict[(i,j)]['centroids'] = centroids
 		print('Removed duplicates from block ({},{})'.format(i,j))
+	print()
 	return data_dict
 
 #============================================ Output writer ===============================================
 def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=np.infty):
 	"""Writes 3 shapefiles: CONTOURS.shp, BLOCK_LINES.shp, POINTS.shp, which respectively contain crop
-	contours, block shapes and crop centroids. The tif is divided into overlapping blocks of size block_size+2*block_overlap. 
-	Duplicates in the overlap region are removed using KDTrees. The parameter max_count is included for debug purposes; 
+	contours, block shapes and crop centroids. The tif is divided into overlapping blocks of size block_size+2*block_overlap.
+	Duplicates in the overlap region are removed using KDTrees. The parameter max_count is included for debug purposes;
 	the process is terminated after max_count blocks."""
 	tif = rasterio.open(img_path)
 	profile  = tif.profile.copy()
@@ -207,9 +226,9 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' } }
 	schema_cnt   = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
 
-	with collection(out_dir+'CONTOURS.shp', "w", "ESRI Shapefile", schema_cnt) as output_cnt:
-		with collection(out_dir+'POINTS.shp', "w", "ESRI Shapefile", schema_pnt) as output_pnt:
-			with collection(out_dir+'BLOCK_LINES.shp', "w", "ESRI Shapefile", schema_lines) as output_lines:
+	with collection(out_dir+'CONTOURS.shp', "w", "ESRI Shapefile", schema_cnt, crs=from_epsg(4326)) as output_cnt:
+		with collection(out_dir+'POINTS.shp', "w", "ESRI Shapefile", schema_pnt, crs=from_epsg(4326)) as output_pnt:
+			with collection(out_dir+'BLOCK_LINES.shp', "w", "ESRI Shapefile", schema_lines, crs=from_epsg(4326)) as output_lines:
 
 				for (i,j) in data_dict.keys():
 					contours  = data_dict[(i,j)]['contours']
@@ -238,13 +257,11 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 						'geometry' : mapping(Polygon(transformed_edges))})
 
 					print('Block ({},{}) written'.format(i,j))
-	print('\nFinished!\n')
-	
+	print('\nFinished!')
+
 if __name__ == "__main__":
-	img_name = img_path.split('/')[-1].split('.')[0]
-	out_directory = 'PLANT COUNT - '+img_name+'/'
+	img_name = img_path.split(r'/')[-1].split('.')[0]
+	out_directory = r'TEST\\'
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=6)
-
-
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=120)
