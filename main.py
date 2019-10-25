@@ -1,9 +1,14 @@
 #!/usr/bin/python3.6
+platform = 'linux'
+
 #================================================== Imports ==================================================
 import os
 import cv2
-from pathlib import Path, PureWindowsPath
-import keras.models as ker_models
+# from pathlib import Path, PureWindowsPath
+if platform == 'windows':
+	import keras.models as ker_models
+elif platform == 'linux':
+	import tensorflow.keras.models as ker_models
 import rasterio
 from shapely.geometry import Polygon, Point, mapping
 from scipy.spatial import KDTree
@@ -12,27 +17,29 @@ from fiona.crs import from_epsg
 import numpy as np
 
 import processing as proc
-import dem_functions
+import tif_functions
 import settings
 
 #================================================= Crop Type =================================================
-platform = 'windows'
 crop = 'broccoli'														# which crop is present in field
 params = settings.get_settings(crop)
-
-#============================================== Get Parameters ===============================================
 for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
 
-img_path = r"D:\VanBovenDrive\VanBoven MT\Archive\c01_verdonk\Wever west\20190717\0749\Orthomosaic\c01_verdonk-Wever west-20190717.tif"
-dem_path = r"D:\VanBovenDrive\VanBoven MT\Archive\c01_verdonk\Wever west\20190717\0749\Orthomosaic\c01_verdonk-Wever west-20190717_DEM.tif"
+#========================================== Get Parameters & Models ==========================================
+# img_path = r"D:\VanBovenDrive\VanBoven MT\Archive\c01_verdonk\Wever west\20190717\0749\Orthomosaic\c01_verdonk-Wever west-20190717.tif"
+# dem_path = r"D:\VanBovenDrive\VanBoven MT\Archive\c01_verdonk\Wever west\20190717\0749\Orthomosaic\c01_verdonk-Wever west-20190717_DEM.tif"
 
-dem_functions 	 = dem_functions.get_functions(img_path, dem_path)		# functions to jump between color image and heightmap
+img_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707-GR_cropped.tif"
+dem_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707_DEM-GR.tif"
+clp_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707-GR_FIELD.shp"
+
+dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_window 		 = dem_functions['get_window']
 dem_scale_factor = dem_functions['scale_factor']						# constant
 
-def load(path):
+def windows_load(path):
 	name = path.split(r'\\')[-1].split('.')[0]
 	with open(path, 'r') as f:
 		json_string = f.read()
@@ -47,8 +54,8 @@ elif platform == 'windows':
 	from keras.utils import CustomObjectScope
 	from keras.initializers import glorot_uniform
 	with CustomObjectScope({'GlorotUniform': glorot_uniform()}):
-		box_model = load(params['detection_model_path'].replace('h5','json').replace('/', r'\\'))
-		mask_model = load(params['masking_model_path'].replace('h5','json').replace('/', r'\\'))
+		box_model = windows_load(params['detection_model_path'].replace('h5','json').replace('/', r'\\'))
+		mask_model = windows_load(params['masking_model_path'].replace('h5','json').replace('/', r'\\'))
 
 #============================================ Model functions ===============================================
 def pop(x, k):
@@ -91,6 +98,8 @@ def create_crops(c_im, h_im, c_rects, h_rects):
 
 def run(c_im, h_im, padding=0):
 	"""Run complete model on the block c_im and its corresponding height block h_im."""
+	if c_im.mean() <= 2:		# black part
+		raise IndexError
 	c_coords = proc.window_hotspots_centers(c_im, sigma=sigma, padding=padding, top_left=0)		# run region proposer
 	c_rects, h_rects = create_boxes(c_coords)
 	c_crops, h_crops = create_crops(c_im, h_im, c_rects, h_rects)
@@ -130,8 +139,8 @@ def run_block(block_size, block_overlap=box_size, max_count=np.infty):
 	data_dict = dict()
 
 	count = 0
-	for i in range(10,num_rows+1):				###
-		for j in range(8,20):#num_cols+1):
+	for i in range(0,num_rows+1):				###
+		for j in range(0,num_cols+1):
 			try:
 				c_im, h_im, (i_ad, j_ad, height, width) = get_window(i*block_size-block_overlap, j*block_size-block_overlap,
 																	 block_size+2*block_overlap, block_size+2*block_overlap)
@@ -141,16 +150,17 @@ def run_block(block_size, block_overlap=box_size, max_count=np.infty):
 				print('Block ({},{}) too small'.format(i,j))
 				continue
 
-			# try:
-			print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
-			contours, centroids = run(c_im, h_im, padding=box_size)
-			# except:
-			# 	contours, centroids = np.array([]), np.array([])
+			try:
+				print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
+				contours, centroids = run(c_im, h_im, padding=box_size)
+			except:
+				print('No crops found in block ({},{})'.format(i,j))
+				continue
 
 			data_dict[(i,j)] = {'contours':contours, 'centroids':centroids, 'block':(i_ad, j_ad, height, width)}
 
 			count += 1
-			print('Block ({},{}) complete: {}/{}\n'.format(i, j, count, (num_cols+1)*(num_rows+1)+1))
+			print('Block ({},{}) complete: {}\n'.format(i, j, count))
 
 			if count >= max_count:
 				break
@@ -261,7 +271,8 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 
 if __name__ == "__main__":
 	img_name = img_path.split(r'/')[-1].split('.')[0]
-	out_directory = r'TEST\\'
+	out_directory = '/'.join(img_path.split('/')[:-1])+'/Plant Count/'
+	# out_directory = r'TEST\\'
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=120)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=10)

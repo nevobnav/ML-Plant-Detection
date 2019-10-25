@@ -14,7 +14,7 @@ from scipy.spatial import Delaunay
 from skimage.feature import peak_local_max
 
 # ========================================= Region Proposal =============================================
-def window_hotspots_centers(im, sigma=3.6, padding=0, m=2, top_left=0):
+def window_hotspots_centers(im, sigma=4, padding=0, m=2, top_left=0):
 	"""RoI generator based on local minima of (u+v)-channel."""
 	if padding > 0:
 		im = im[padding:-padding, padding:-padding, :]
