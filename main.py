@@ -31,7 +31,7 @@ for param in params.keys():												# load all non-string parameters
 # img_path = r"D:\VanBovenDrive\VanBoven MT\Archive\c01_verdonk\Wever west\20190717\0749\Orthomosaic\c01_verdonk-Wever west-20190717.tif"
 # dem_path = r"D:\VanBovenDrive\VanBoven MT\Archive\c01_verdonk\Wever west\20190717\0749\Orthomosaic\c01_verdonk-Wever west-20190717_DEM.tif"
 
-img_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707-GR_cropped.tif"
+img_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707-GR.tif"
 dem_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707_DEM-GR.tif"
 clp_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707-GR_FIELD.shp"
 
@@ -236,7 +236,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' } }
 	schema_cnt   = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
 
-	with collection(out_dir+'CONTOURS.shp', "w", "ESRI Shapefile", schema_cnt, crs=from_epsg(4326)) as output_cnt:
+	with collection(out_dir+'CONTOURS.shp', "w", "ESRI Shapefile", schema_cnt, crs=from_epsg(4326)) as output_cnt:					# add projection
 		with collection(out_dir+'POINTS.shp', "w", "ESRI Shapefile", schema_pnt, crs=from_epsg(4326)) as output_pnt:
 			with collection(out_dir+'BLOCK_LINES.shp', "w", "ESRI Shapefile", schema_lines, crs=from_epsg(4326)) as output_lines:
 
@@ -275,4 +275,4 @@ if __name__ == "__main__":
 	# out_directory = r'TEST\\'
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=10)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=100)
