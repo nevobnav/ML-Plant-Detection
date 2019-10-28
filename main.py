@@ -4,13 +4,13 @@ platform = 'linux'
 #================================================== Imports ==================================================
 import os
 import cv2
-# from pathlib import Path, PureWindowsPath
+import pathlib
 if platform == 'windows':
 	import keras.models as ker_models
 elif platform == 'linux':
 	import tensorflow.keras.models as ker_models
 import rasterio
-from shapely.geometry import Polygon, Point, mapping, shape
+from shapely.geometry import Polygon, Point, mapping, shape, MultiPolygon
 from scipy.spatial import KDTree
 import fiona
 from fiona.crs import from_epsg
@@ -248,6 +248,15 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	trans = tif.transform
 	tif.close()
 
+	filter_edges = True
+
+	field_shape = fiona.open(clp_path)
+	field_polygons = []
+	for feature in field_shape:
+		poly = shape(feature['geometry'])
+		field_polygons.append(poly)
+	field = MultiPolygon(field_polygons)
+
 	data_dict = run_model(block_size, block_overlap, max_count=max_count)
 	data_dict = process_overlap(data_dict, block_overlap)
 
@@ -259,23 +268,21 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 		with fiona.collection(out_dir+'POINTS.shp', "w", "ESRI Shapefile", schema_pnt, crs=from_epsg(4326)) as output_pnt:
 			with fiona.collection(out_dir+'BLOCK_LINES.shp', "w", "ESRI Shapefile", schema_lines, crs=from_epsg(4326)) as output_lines:
 
-				for (i,j) in data_dict.keys():
+				for (i,j) in data_dict:
 					contours  = data_dict[(i,j)]['contours']
 					centroids = data_dict[(i,j)]['centroids']
 					(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
 
 					for (k, cnt) in enumerate(contours):							# write contours
 						xs, ys = cnt[:,1] + j_ad, cnt[:,0] + i_ad
-						transformed_points = [trans*(xs[l],ys[l]) for l in range(len(xs))]
-						poly = Polygon(transformed_points)
-						output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
-				            			  'geometry': mapping(Polygon(transformed_points))})
-
-					for (k, centroid) in enumerate(centroids):						# write centroids
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
-						transformed_centroid = trans*centroid
-						output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
-				            			  'geometry': mapping(Point(transformed_centroid))})
+						transformed_points   = Polygon([trans*(xs[l],ys[l]) for l in range(len(xs))])
+						transformed_centroid = Point(trans*centroid)
+						if transformed_points.difference(field).is_empty or not filter_edges:			# if contour is complete enclosed in field
+							output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
+					            			  'geometry': mapping(transformed_centroid)})
+							output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
+					            			  'geometry': mapping(transformed_points)})
 
 					block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
 					transformed_vertices = [trans*(a,b) for (b,a) in block_vertices]
@@ -294,5 +301,5 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=30)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=50)
 

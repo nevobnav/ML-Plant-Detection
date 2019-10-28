@@ -37,7 +37,8 @@ def get_clip_slice(clip, i_img, j_img, num_rows, num_cols):
 	return np.dstack((r,g,b))
 
 def get_functions(img_path, dem_path, clip_path=None):
-	"""Returns a dict containing functions and constants useful for jumping between Color image and DEM."""
+	"""Returns a dict containing functions and constants useful for jumping between Color image and DEM, 
+	specified by img_path and dem_path respectively."""
 	dem = gdal.Open(dem_path)
 
 	if clip_path != None:
@@ -97,6 +98,7 @@ def get_functions(img_path, dem_path, clip_path=None):
 		return c_im, h_im
 
 	def get_adjusted_window(i_img, j_img, num_rows, num_cols):
+		"""If part of the window is outside of the RGB tif, the window is adjusted. The new window extent is returned."""
 		if i_img<0:											# north border
 			num_rows = num_rows-abs(i_img)
 			i_img = max(0, i_img)
@@ -110,9 +112,7 @@ def get_functions(img_path, dem_path, clip_path=None):
 		return i_img, j_img, num_rows, num_cols
 
 	def get_window(i_img, j_img, num_rows, num_cols):
-		"""Gets the window [i_img:i_img+num_rows, j_img:j_img+num_cols] from RGB tif and the corresponding H slice. If part of the window is 
-		outside of the RGB tif, the window gets cropped. The new window extent is also returned."""
-		# i_img, j_img, num_rows, num_cols = get_adjusted_window(i_img, j_img, num_rows, num_cols)
+		"""Gets the window [i_img:i_img+num_rows, j_img:j_img+num_cols] from RGB tif and the corresponding H slice."""
 		c_im =  get_color_slice(i_img, j_img, num_rows, num_cols)
 		h_im = get_height_slice(i_img, j_img, num_rows, num_cols)
 		return c_im, h_im
@@ -120,6 +120,7 @@ def get_functions(img_path, dem_path, clip_path=None):
 	func_dict = dict()
 	for f in [xy_img, xy_dem, rowcol_img, rowcol_dem, get_dem_pixel, get_color_slice, get_height_slice, get_slices, get_adjusted_window, get_window]:
 		func_dict[f.__name__] = f
+		
 	func_dict['scale_factor'] = scale_factor
 	func_dict['delta_c'] 	  = pixel_size_img 							# long-lat pixel step size in RGB image (degrees)
 	func_dict['delta_h'] 	  = pixel_size_dem 							# long-lat step size in H image (degrees)
