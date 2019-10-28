@@ -28,12 +28,14 @@ for param in params.keys():												# load all non-string parameters
 		exec('{}={}'.format(param, params[param]))
 
 #========================================== Get Parameters & Models ==========================================
-# img_path = r"D:\VanBovenDrive\VanBoven MT\Archive\c01_verdonk\Wever west\20190717\0749\Orthomosaic\c01_verdonk-Wever west-20190717.tif"
-# dem_path = r"D:\VanBovenDrive\VanBoven MT\Archive\c01_verdonk\Wever west\20190717\0749\Orthomosaic\c01_verdonk-Wever west-20190717_DEM.tif"
-
-img_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707-GR.tif"
-dem_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707_DEM-GR.tif"
-clp_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707-GR_FIELD.shp"
+if platform == 'linux':
+	img_path = r"../../Orthomosaics/c01_verdonk-Wever west-201907240724-GR/c01_verdonk-Wever west-201907240724-GR.tif"
+	dem_path = r"../../Orthomosaics/c01_verdonk-Wever west-201907240724-GR/c01_verdonk-Wever west-201907240724_DEM-GR.tif"
+	clp_path = r"../../Orthomosaics/c01_verdonk-Wever west-201907240724-GR/c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
+elif platform == 'windows':
+	img_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724-GR.tif"
+	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724_DEM-GR.tif"
+	clp_path = r"Field Shapefiles\\c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
 
 dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_adj_window	 = dem_functions['get_adjusted_window']
@@ -59,11 +61,6 @@ elif platform == 'windows':
 		mask_model = windows_load(params['masking_model_path'].replace('h5','json').replace('/', r'\\'))
 
 #============================================ Model functions ===============================================
-def pop(x, k):
-	"""Removes the k-th element of the array x. Removal is not done in-place, to update x, use x=pop(x,k)."""
-	k = k%x.shape[0]
-	return np.concatenate((x[:k], x[k+1:]))
-
 def create_boxes(c_coords):
 	h_size = int(np.round(dem_scale_factor*box_size))
 	h_coords = np.round(dem_scale_factor*c_coords).astype(int) 									# convert to DEM row/col
@@ -79,7 +76,7 @@ def create_boxes(c_coords):
 	h_rects[:,3] = h_size
 	return c_rects, h_rects
 
-def create_crops(c_im, h_im, c_rects, h_rects):
+def fill_data_tensor(c_im, h_im, c_rects, h_rects):
 	num_candidates = c_rects.shape[0]
 	c_crops = np.zeros((num_candidates, c_box[0], c_box[1], 3), dtype=np.uint8)		# initialize tensors
 	h_crops = np.zeros((num_candidates, h_box[0], h_box[1], 1), dtype=np.uint8)
@@ -97,13 +94,13 @@ def create_crops(c_im, h_im, c_rects, h_rects):
 			raise IndexError('cropping failed with c_rect = ({}, {}, {}, {}), h_rect=({}, {}, {}, {})'.format(x_c, y_c, w_c, h_c, x_h, y_h, w_h, h_h))
 	return c_crops, h_crops
 
-def run(c_im, h_im, padding=0):
+def run_on_block(c_im, h_im, padding=0):
 	"""Run complete model on the block c_im and its corresponding height block h_im."""
 	if c_im.mean() <= 2:		# black part
 		raise IndexError
 	c_coords = proc.window_hotspots_centers(c_im, sigma=sigma, padding=padding, top_left=0)		# run region proposer
 	c_rects, h_rects = create_boxes(c_coords)
-	c_crops, h_crops = create_crops(c_im, h_im, c_rects, h_rects)
+	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
 
 	predictions = box_model.predict([c_crops, h_crops], verbose=1)								# run classification model
 	broc_rects, broc_probs = proc.sort_into_classes(c_rects, predictions)
@@ -171,7 +168,7 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 	print('Found {} valid blocks of a total of {}'.format(len(valid_blocks), (num_rows+1)*(num_cols+1)))
 	return valid_blocks
 
-def run_block(block_size, block_overlap=box_size, max_count=np.infty):
+def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 	"""Perform model on img_path by dividing it into blocks."""
 	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
 	data_dict = dict()
@@ -188,56 +185,52 @@ def run_block(block_size, block_overlap=box_size, max_count=np.infty):
 
 		try:
 			print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
-			contours, centroids = run(c_im, h_im, padding=box_size)
+			contours, centroids = run_on_block(c_im, h_im, padding=box_size)
 		except:
 			print('No crops found in block ({},{})'.format(i,j))
 			continue
 
 		data_dict[(i,j)] = {'contours':contours, 'centroids':centroids, 'block':(i_ad, j_ad, height, width)}
-		print('Block ({},{}) complete\n'.format(i, j))#, count))
+		print('Block ({},{}) complete\n'.format(i, j))
 
 	return data_dict
 
-def remove_duplicates(data_dict, block_overlap):
+def remove_duplicates(center_centroids, center_contours, other_centroids, shift):
+	if len(other_centroids)>0:
+		center_tree = KDTree(center_centroids)
+		other_tree  = KDTree(other_centroids-np.ones(other_centroids.shape)*shift)
+		q = center_tree.query_ball_tree(other_tree, overlap_distance)
+		picks = []
+		for (k, neighbour_list) in enumerate(q):
+			if len(neighbour_list) < 1:
+				picks.append(k)
+	return center_centroids[picks], list(np.array(center_contours)[picks])
+
+def process_overlap(data_dict, block_overlap):
 	"""Uses KDTree to remove duplicates in overlapping regions between two adjacent blocks."""
 	for (i,j) in data_dict.keys():
 		contours  = data_dict[(i,j)]['contours']
 		centroids = data_dict[(i,j)]['centroids']
 		(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
 
-		if j>0 and (i,j-1) in data_dict and len(centroids)>0:									# check against east block for duplicates
-			east_contours  = data_dict[(i,j-1)]['contours']
-			east_centroids = data_dict[(i,j-1)]['centroids']
-			width_east     = data_dict[(i,j-1)]['block'][3]
+		if j>0 and (i,j-1) in data_dict and len(centroids)>0:											# check against east block for duplicates
+			centroids_e = data_dict[(i,j-1)]['centroids']
+			width_e     = data_dict[(i,j-1)]['block'][3]
+			shift_e = (width_e-2*block_overlap, 0)
+			centroids, contours = remove_duplicates(centroids, contours, centroids_e, shift_e)
 
-			if len(east_centroids)>0:
-				center_tree = KDTree(centroids)
-				east_tree   = KDTree(east_centroids-np.ones(east_centroids.shape)*(width_east-2*block_overlap,0))
-				q = center_tree.query_ball_tree(east_tree, overlap_distance)
-				picks = []
-				for (k, neighbour_list) in enumerate(q):
-					if len(neighbour_list) >= 1:
-						picks.append(k)
-				for k in picks[::-1]:
-					centroids = pop(centroids, k)
-					contours.pop(k)
+		if i>0 and (i-1,j) in data_dict and len(centroids)>0:											# check against north block for duplicates
+			centroids_n = data_dict[(i-1,j)]['centroids']
+			height_n    = data_dict[(i-1,j)]['block'][2]
+			shift_n = (0, height_n-2*block_overlap)
+			centroids, contours = remove_duplicates(centroids, contours, centroids_n, shift_n)
 
-		if i>0 and (i-1,j) in data_dict and len(centroids)>0:									# check against north block for duplicates
-			north_contours  = data_dict[(i-1,j)]['contours']
-			north_centroids = data_dict[(i-1,j)]['centroids']
-			height_north    = data_dict[(i-1,j)]['block'][2]
-
-			if len(north_centroids)>0:
-				center_tree = KDTree(centroids)
-				north_tree  = KDTree(north_centroids-np.ones(north_centroids.shape)*(0,height_north-2*block_overlap))
-				q = center_tree.query_ball_tree(north_tree, overlap_distance)
-				picks = []
-				for (k, neighbour_list) in enumerate(q):
-					if len(neighbour_list) >= 1:
-						picks.append(k)
-				for k in picks[::-1]:
-					centroids = pop(centroids,k)
-					contours.pop(k)
+		if i>0 and j>0 and (i-1,j-1) in data_dict and len(centroids)>0:									# check against north-east block for duplicates
+			centroids_ne = data_dict[(i-1,j-1)]['centroids']
+			height_ne    = data_dict[(i-1,j-1)]['block'][2]
+			width_ne     = data_dict[(i-1,j-1)]['block'][3]
+			shift_ne = (width_ne-2*block_overlap, height_ne-2*block_overlap)
+			centroids, contours = remove_duplicates(centroids, contours, centroids_ne, shift_ne)
 
 		data_dict[(i,j)]['contours']  = contours 						# update contours & centroids
 		data_dict[(i,j)]['centroids'] = centroids
@@ -255,8 +248,8 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	trans = tif.transform
 	tif.close()
 
-	data_dict = run_block(block_size, block_overlap, max_count=max_count)
-	data_dict = remove_duplicates(data_dict, block_overlap)
+	data_dict = run_model(block_size, block_overlap, max_count=max_count)
+	data_dict = process_overlap(data_dict, block_overlap)
 
 	schema_lines = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
 	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' } }
@@ -275,22 +268,19 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 						xs, ys = cnt[:,1] + j_ad, cnt[:,0] + i_ad
 						transformed_points = [trans*(xs[l],ys[l]) for l in range(len(xs))]
 						poly = Polygon(transformed_points)
-						output_cnt.write({
-				            'properties': { 'name': '({},{}): {}'.format(i, j, k)},
-				            'geometry': mapping(Polygon(transformed_points))})
+						output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
+				            			  'geometry': mapping(Polygon(transformed_points))})
 
 					for (k, centroid) in enumerate(centroids):						# write centroids
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
 						transformed_centroid = trans*centroid
-						output_pnt.write({
-							'properties': { 'name': '({},{}): {}'.format(i, j, k)},
-				            'geometry': mapping(Point(transformed_centroid))})
+						output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
+				            			  'geometry': mapping(Point(transformed_centroid))})
 
 					block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
 					transformed_vertices = [trans*(a,b) for (b,a) in block_vertices]
-					output_lines.write({											# write block edges
-						'properties' : {'name': 'block ({},{})'.format(i,j)},
-						'geometry' : mapping(Polygon(transformed_vertices))})
+					output_lines.write({'properties' : {'name': 'block ({},{})'.format(i,j)},
+										'geometry' : mapping(Polygon(transformed_vertices))})
 
 					print('Block ({},{}) written'.format(i,j))
 	print('\nFinished!')
@@ -300,8 +290,9 @@ if __name__ == "__main__":
 		img_name = img_path.split(r'/')[-1].split('.')[0]								# name 
 		out_directory = '/'.join(img_path.split('/')[:-1])+'/Plant Count/'				# place folder Plant Count in the same folder as img_path
 	elif platform == 'windows':
-		out_directory = r'TEST\\'
+		img_name = img_path.split(r"\\")[-1].split('.')[0]	
+		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=20)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=30)
 

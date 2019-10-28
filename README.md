@@ -20,9 +20,13 @@ In main.py, let the variables `img_path` and `dem_path` equal paths to a RGB tif
 ## A Note on Platforms
 The algorithm is written on the Ubuntu (Linux) platform, but is intended to be used on all platforms (Windows, Mac). In main.py, set the variable `platform` equal to the OS on which the algorithm is being run. This is necessary because file paths have a different structure on different platforms (this should be fixed by using the module `pathlib` in a future version). Furthermore, the models are trained and saved on Linux. Due to a bug in Keras, .h5 files created on Linux can not be loaded on Windows using the `load_model` method from `keras.models`. Instead, the model structure and weights should be saved separately to a .json and .h5 file respectively. These files can then by imported on Windows using a workaround. A small Python script `model_converter.py` is added to both CNN folders which converts a complete model .h5 file to a .json structure files and .h5 weight file.
 
-## Current Problems
-<!-- ### Inefficient Crop-less Block Checking
-An input tif often contains a lot of blocks without any crops. If a clip shapefile is provided, these blocks only contain the value 0. Currently, every block is checked on whether every element is zero. This is quite inefficient, especially if the plot is positioned diagonally in the raster. A fix would be to generate a list of 'valid' block indeces a-priori, and apply the model only to the corresponding blocks. These indeces could be determined based on the clip shapefile. -->
+## Current Problems and Planned Changes
 
 ### File Path Management
 To improve cross-compatibility between Linux and Windows (and OSX), file paths should be handled by the module `pathlib` instead of dealing with strings.
+
+### Field Edge False Positives
+Faulty crops are detected near the edge of the clipped field. It is to be expected that centers are detected near these edges, since the no-data value defaults to black. However, the CNN seems to label these locations as crops. Possible fixes are re-training the model with some of these edge-cases, or maybe also clipping the DEM. This phenomenon only seems to occur at certain borders. 
+
+### Big Sizes Difference
+Since the box size is fixed, the model tends to miss crops which are very small relative to the box. This can be fixed by placing boxes of various sizes at the same location. If a crop is small, it will probably be detected in a small box, but not a big one. If a crop is detected in every box, keep only the biggest. A drawback of this method is that the detection CNN will have to process much more candidates, significantly impacting computation time. 
