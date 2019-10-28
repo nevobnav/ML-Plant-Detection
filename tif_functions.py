@@ -36,19 +36,6 @@ def get_clip_slice(clip, i_img, j_img, num_rows, num_cols):
 	b = np.array(clip.GetRasterBand(3).ReadAsArray(j_img, i_img, num_cols, num_rows), dtype=np.uint8)
 	return np.dstack((r,g,b))
 
-def get_offset(path):
-	"""Looks at all files in folder specified by path. Files should end with a number, 
-	the highest of these numbers is returned. Useful for determining the next number
-	in a training set."""
-	nums = []
-	contents = os.listdir(path)
-	if len(contents)==0:
-		return 0
-	for elt in contents:
-		numstr = elt.split('_')[1].split('.')[0]
-		nums.append(int(numstr))
-	return max(nums)
-
 def get_functions(img_path, dem_path, clip_path=None):
 	"""Returns a dict containing functions and constants useful for jumping between Color image and DEM."""
 	dem = gdal.Open(dem_path)
@@ -109,9 +96,7 @@ def get_functions(img_path, dem_path, clip_path=None):
 		h_im = get_height_slice(i_img-num_rows//2, j_img-num_cols//2, num_rows, num_cols)
 		return c_im, h_im
 
-	def get_window(i_img, j_img, num_rows, num_cols):
-		"""Gets the window [i_img:i_img+num_rows, j_img:j_img+num_cols] from RGB tif and the corresponding H slice. If part of the window is 
-		outside of the RGB tif, the window gets cropped. The new window extent is also returned."""
+	def get_adjusted_window(i_img, j_img, num_rows, num_cols):
 		if i_img<0:											# north border
 			num_rows = num_rows-abs(i_img)
 			i_img = max(0, i_img)
@@ -122,13 +107,18 @@ def get_functions(img_path, dem_path, clip_path=None):
 			j_img = max(0, j_img)
 		elif j_img+num_cols>band1.XSize:					# east border
 			num_cols = min(band1.XSize - j_img, num_cols)
+		return i_img, j_img, num_rows, num_cols
+
+	def get_window(i_img, j_img, num_rows, num_cols):
+		"""Gets the window [i_img:i_img+num_rows, j_img:j_img+num_cols] from RGB tif and the corresponding H slice. If part of the window is 
+		outside of the RGB tif, the window gets cropped. The new window extent is also returned."""
+		# i_img, j_img, num_rows, num_cols = get_adjusted_window(i_img, j_img, num_rows, num_cols)
 		c_im =  get_color_slice(i_img, j_img, num_rows, num_cols)
 		h_im = get_height_slice(i_img, j_img, num_rows, num_cols)
-		adjusted_window = (i_img, j_img, num_rows, num_cols)
-		return c_im, h_im, adjusted_window
+		return c_im, h_im
 
 	func_dict = dict()
-	for f in [xy_img, xy_dem, rowcol_img, rowcol_dem, get_dem_pixel, get_color_slice, get_height_slice, get_slices, get_window]:
+	for f in [xy_img, xy_dem, rowcol_img, rowcol_dem, get_dem_pixel, get_color_slice, get_height_slice, get_slices, get_adjusted_window, get_window]:
 		func_dict[f.__name__] = f
 	func_dict['scale_factor'] = scale_factor
 	func_dict['delta_c'] 	  = pixel_size_img 							# long-lat pixel step size in RGB image (degrees)

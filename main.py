@@ -10,9 +10,9 @@ if platform == 'windows':
 elif platform == 'linux':
 	import tensorflow.keras.models as ker_models
 import rasterio
-from shapely.geometry import Polygon, Point, mapping
+from shapely.geometry import Polygon, Point, mapping, shape
 from scipy.spatial import KDTree
-from fiona import collection
+import fiona
 from fiona.crs import from_epsg
 import numpy as np
 
@@ -36,6 +36,7 @@ dem_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdo
 clp_path = r"../../Orthomosaics/c01_verdonk-Wever oost-201907240707-GR/c01_verdonk-Wever oost-201907240707-GR_FIELD.shp"
 
 dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
+get_adj_window	 = dem_functions['get_adjusted_window']
 get_window 		 = dem_functions['get_window']
 dem_scale_factor = dem_functions['scale_factor']						# constant
 
@@ -129,43 +130,71 @@ def run(c_im, h_im, padding=0):
 
 	return contours, centroids
 
-def run_block(block_size, block_overlap=box_size, max_count=np.infty):
-	"""Perform model on img_path by dividing it into blocks."""
+def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
+	"""For every block, determine if it is valid by checking whether it intersects with the field specified by clp_path. 
+	Returns a dictionary of the form (i,j) : (i_ad, j_ad, height, width), where (i,j) is the index of a valid block, 
+	and its value are the dimensions of the adjusted box."""
+	field_shape = fiona.open(clp_path)
+	field_polygons = []
+	for feature in field_shape:
+		poly = shape(feature['geometry'])
+		field_polygons.append(poly)
 	tif = rasterio.open(img_path)
 	num_cols = tif.width//block_size
 	num_rows = tif.height//block_size
+	trans    = tif.transform
 	tif.close()
 
-	data_dict = dict()
+	valid_blocks = dict()
 
 	count = 0
+
 	for i in range(0,num_rows+1):				###
 		for j in range(0,num_cols+1):
-			try:
-				c_im, h_im, (i_ad, j_ad, height, width) = get_window(i*block_size-block_overlap, j*block_size-block_overlap,
-																	 block_size+2*block_overlap, block_size+2*block_overlap)
-				if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
-					continue
-			except:
-				print('Block ({},{}) too small'.format(i,j))
-				continue
-
-			try:
-				print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
-				contours, centroids = run(c_im, h_im, padding=box_size)
-			except:
-				print('No crops found in block ({},{})'.format(i,j))
-				continue
-
-			data_dict[(i,j)] = {'contours':contours, 'centroids':centroids, 'block':(i_ad, j_ad, height, width)}
-
-			count += 1
-			print('Block ({},{}) complete: {}\n'.format(i, j, count))
+			i_ad, j_ad, height, width = get_adj_window(i*block_size-block_overlap, j*block_size-block_overlap,
+													   block_size+2*block_overlap, block_size+2*block_overlap)
+			block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
+			transformed_vertices = Polygon([trans*(a,b) for (b,a) in block_vertices])
+			valid = False
+			for field_poly in field_polygons:
+				if field_poly.intersects(transformed_vertices):
+					valid = True
+					break
+			if valid:
+				valid_blocks[(i,j)] = (i_ad, j_ad, height, width)
+				count += 1
 
 			if count >= max_count:
 				break
 		if count >= max_count:
 			break
+	print('Found {} valid blocks of a total of {}'.format(len(valid_blocks), (num_rows+1)*(num_cols+1)))
+	return valid_blocks
+
+def run_block(block_size, block_overlap=box_size, max_count=np.infty):
+	"""Perform model on img_path by dividing it into blocks."""
+	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
+	data_dict = dict()
+
+	for (i,j) in valid_blocks:
+		try:
+			i_ad, j_ad, height, width = valid_blocks[(i,j)]
+			c_im, h_im = get_window(i_ad, j_ad, height, width)
+			if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
+				continue
+		except:
+			print('Block ({},{}) too small'.format(i,j))
+			continue
+
+		try:
+			print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
+			contours, centroids = run(c_im, h_im, padding=box_size)
+		except:
+			print('No crops found in block ({},{})'.format(i,j))
+			continue
+
+		data_dict[(i,j)] = {'contours':contours, 'centroids':centroids, 'block':(i_ad, j_ad, height, width)}
+		print('Block ({},{}) complete\n'.format(i, j))#, count))
 
 	return data_dict
 
@@ -223,10 +252,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	Duplicates in the overlap region are removed using KDTrees. The parameter max_count is included for debug purposes;
 	the process is terminated after max_count blocks."""
 	tif = rasterio.open(img_path)
-	profile  = tif.profile.copy()
-	trans    = tif.transform
-	num_cols = tif.width//block_size
-	num_rows = tif.height//block_size
+	trans = tif.transform
 	tif.close()
 
 	data_dict = run_block(block_size, block_overlap, max_count=max_count)
@@ -236,9 +262,9 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' } }
 	schema_cnt   = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
 
-	with collection(out_dir+'CONTOURS.shp', "w", "ESRI Shapefile", schema_cnt, crs=from_epsg(4326)) as output_cnt:					# add projection
-		with collection(out_dir+'POINTS.shp', "w", "ESRI Shapefile", schema_pnt, crs=from_epsg(4326)) as output_pnt:
-			with collection(out_dir+'BLOCK_LINES.shp', "w", "ESRI Shapefile", schema_lines, crs=from_epsg(4326)) as output_lines:
+	with fiona.collection(out_dir+'CONTOURS.shp', "w", "ESRI Shapefile", schema_cnt, crs=from_epsg(4326)) as output_cnt:					# add projection
+		with fiona.collection(out_dir+'POINTS.shp', "w", "ESRI Shapefile", schema_pnt, crs=from_epsg(4326)) as output_pnt:
+			with fiona.collection(out_dir+'BLOCK_LINES.shp', "w", "ESRI Shapefile", schema_lines, crs=from_epsg(4326)) as output_lines:
 
 				for (i,j) in data_dict.keys():
 					contours  = data_dict[(i,j)]['contours']
@@ -260,19 +286,22 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 							'properties': { 'name': '({},{}): {}'.format(i, j, k)},
 				            'geometry': mapping(Point(transformed_centroid))})
 
-					block_edges = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
-					transformed_edges = [trans*(a,b) for (b,a) in block_edges]
+					block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
+					transformed_vertices = [trans*(a,b) for (b,a) in block_vertices]
 					output_lines.write({											# write block edges
 						'properties' : {'name': 'block ({},{})'.format(i,j)},
-						'geometry' : mapping(Polygon(transformed_edges))})
+						'geometry' : mapping(Polygon(transformed_vertices))})
 
 					print('Block ({},{}) written'.format(i,j))
 	print('\nFinished!')
 
 if __name__ == "__main__":
-	img_name = img_path.split(r'/')[-1].split('.')[0]
-	out_directory = '/'.join(img_path.split('/')[:-1])+'/Plant Count/'
-	# out_directory = r'TEST\\'
+	if platform == 'linux':
+		img_name = img_path.split(r'/')[-1].split('.')[0]								# name 
+		out_directory = '/'.join(img_path.split('/')[:-1])+'/Plant Count/'				# place folder Plant Count in the same folder as img_path
+	elif platform == 'windows':
+		out_directory = r'TEST\\'
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=100)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=20)
+
