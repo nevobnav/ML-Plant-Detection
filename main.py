@@ -22,7 +22,7 @@ import settings
 
 #================================================= Crop Type =================================================
 crop = 'broccoli'														# which crop is present in field
-params = settings.get_settings(crop, box_size=60)
+params = settings.get_settings(crop, box_size=60, block_size=1000)
 for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
@@ -33,9 +33,9 @@ if platform == 'linux':
 	dem_path = r"../../Orthomosaics/c01_verdonk-Wever west-201907240724-GR/c01_verdonk-Wever west-201907240724_DEM-GR.tif"
 	clp_path = r"../../Orthomosaics/c01_verdonk-Wever west-201907240724-GR/c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
 elif platform == 'windows':
-	img_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724-GR.tif"
-	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724_DEM-GR.tif"
-	clp_path = r"Field Shapefiles\\c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
+	img_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859-GR.tif"
+	dem_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859_DEM-GR.tif"
+	clp_path = r"Field Shapefiles\\c01_verdonk-Rijweg stalling 1-201907230859-GR_FIELD.shp"
 
 dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_adj_window	 = dem_functions['get_adjusted_window']
@@ -250,7 +250,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	trans = tif.transform
 	tif.close()
 
-	filter_edges = False
+	filter_edges = True
 
 	field_shape = fiona.open(clp_path)
 	field_polygons = []
@@ -281,14 +281,17 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
 						transformed_points   = Polygon([trans*(xs[l],ys[l]) for l in range(len(xs))])
 						transformed_centroid = Point(trans*centroid)
-						if transformed_points.difference(field).is_empty or not filter_edges:			# if contour is complete enclosed in field
-							output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
-					            			  'geometry': mapping(transformed_centroid)})
-							output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
-					            			  'geometry': mapping(transformed_points)})
-							count += 1
-						else:
-							print('Crop ({},{}):{} intersects field edge'.format(i,j,k))
+						try:
+							if transformed_points.difference(field).is_empty or not filter_edges:			# if contour is complete enclosed in field
+								output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
+						            			  'geometry': mapping(transformed_centroid)})
+								output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
+							            			  'geometry': mapping(transformed_points)})
+								count += 1
+							else:
+								print('Crop ({},{}):{} intersects field edge'.format(i,j,k))
+						except:
+							print('Contour ({},{}):{} invalid'.format(i,j,k))
 					print('{} crops written to block ({},{})'.format(count,i,j))
 
 					block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
