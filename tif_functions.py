@@ -4,8 +4,7 @@ import os
 import gdal
 import numpy as np
 import rasterio
-
-# import clip_functions
+from rasterio.windows import Window
 
 R_EARTH = 6371000.		# radius of earth in meters
 
@@ -46,6 +45,8 @@ def get_functions_rasterio(img_path, dem_path, clip_path=None):
 	trans_dem = dem.transform
 
 	scale_factor = trans_img[0]/trans_dem[0]
+	width  = img.width
+	height = img.height
 
 	def xy_img(i_img, j_img):
 		"""Geotransform (i_img,j_img)_RGB -> (x,y)."""
@@ -63,9 +64,9 @@ def get_functions_rasterio(img_path, dem_path, clip_path=None):
 
 	def get_color_slice(i_img, j_img, num_rows, num_cols):
 		"""Returns (num_rows, num_cols, 3) numpy array represting the RGB-slice i_img:i_img+num_rows, j_img:j_img+num_cols."""
-		r = np.array(img.GetRasterBand(1).ReadAsArray(j_img, i_img, num_cols, num_rows), dtype = np.uint(8))
-		g = np.array(img.GetRasterBand(2).ReadAsArray(j_img, i_img, num_cols, num_rows), dtype = np.uint(8))
-		b = np.array(img.GetRasterBand(3).ReadAsArray(j_img, i_img, num_cols, num_rows), dtype = np.uint(8))
+		r = img.read(1, window=Window(j_img, i_img, num_cols, num_rows))#, dtype = np.uint(8))
+		g = img.read(2, window=Window(j_img, i_img, num_cols, num_rows))#, dtype = np.uint(8))
+		b = img.read(3, window=Window(j_img, i_img, num_cols, num_rows))#, dtype = np.uint(8))
 		return np.dstack((r,g,b))
 
 	def get_height_slice(i_img, j_img, num_rows, num_cols):
@@ -73,7 +74,7 @@ def get_functions_rasterio(img_path, dem_path, clip_path=None):
 		i_dem, j_dem = get_dem_pixel(i_img, j_img)
 		rows2 = int(np.round(num_rows*scale_factor))
 		cols2 = int(np.round(num_cols*scale_factor))
-		h = np.array(dem.GetRasterBand(1).ReadAsArray(j_dem, i_dem, cols2, rows2))#, dtype=np.uint(8))
+		h = dem.read(1, window=Window(j_dem, i_dem, cols2, rows2))#, dtype=np.uint(8))
 		return h
 
 	def get_slices(i_img, j_img, num_rows, num_cols):
@@ -87,13 +88,13 @@ def get_functions_rasterio(img_path, dem_path, clip_path=None):
 		if i_img<0:											# north border
 			num_rows = num_rows-abs(i_img)
 			i_img = max(0, i_img)
-		elif i_img+num_rows>band1.YSize:					# sourth border
-			num_rows = min(band1.YSize - i_img, num_rows)
+		elif i_img+num_rows>height:					# sourth border
+			num_rows = min(height - i_img, num_rows)
 		if j_img<0:											# west border
 			num_cols = num_cols-abs(j_img)
 			j_img = max(0, j_img)
-		elif j_img+num_cols>band1.XSize:					# east border
-			num_cols = min(band1.XSize - j_img, num_cols)
+		elif j_img+num_cols>width:					# east border
+			num_cols = min(width-j_img, num_cols)
 		return i_img, j_img, num_rows, num_cols
 
 	def get_block(i_img, j_img, num_rows, num_cols):
