@@ -1,10 +1,11 @@
 #!/usr/bin/python3.6
-platform = 'windows'
+platform = 'linux'
 
 #================================================== Imports ==================================================
 import os
 import cv2
-import pathlib
+# import pathlib
+import pickle
 if platform == 'windows':
 	import keras.models as ker_models
 elif platform == 'linux':
@@ -145,9 +146,7 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 	tif.close()
 
 	valid_blocks = dict()
-
 	count = 0
-
 	for i in range(0,num_rows+1):
 		for j in range(0,num_cols+1):
 			i_ad, j_ad, height, width = get_adj_window(i*block_size-block_overlap, j*block_size-block_overlap,
@@ -176,13 +175,9 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 	data_dict = dict()
 
 	for (i,j) in valid_blocks:
-		try:
-			i_ad, j_ad, height, width = valid_blocks[(i,j)]
-			c_im, h_im = get_block(i_ad, j_ad, height, width)
-			if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
-				continue
-		except:
-			print('Block ({},{}) too small'.format(i,j))
+		i_ad, j_ad, height, width = valid_blocks[(i,j)]
+		c_im, h_im = get_block(i_ad, j_ad, height, width)
+		if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
 			continue
 
 		try:
@@ -253,7 +248,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	trans = tif.transform
 	tif.close()
 
-	filter_edges = False
+	filter_edges = True
 
 	field_shape = fiona.open(clp_path)
 	field_polygons = []
@@ -264,6 +259,8 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 
 	data_dict = run_model(block_size, block_overlap, max_count=max_count)
 	data_dict = process_overlap(data_dict, block_overlap)
+	with open(out_dir+'DATA.pickle', 'wb') as file:
+		pickle.dump(data_dict, file)
 
 	schema_lines = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
 	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' } }
@@ -311,4 +308,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap)#, max_count=200)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=20)
