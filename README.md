@@ -30,3 +30,6 @@ Faulty crops are detected near the edge of the clipped field. It is to be expect
 
 ### Big Sizes Difference
 Since the box size is fixed, the model tends to miss crops which are very small relative to the box. This can be fixed by placing boxes of various sizes at the same location. If a crop is small, it will probably be detected in a small box, but not a big one. If a crop is detected in every box, keep only the biggest. A drawback of this method is that the detection CNN will have to process much more candidates, significantly impacting computation time. 
+
+## Other Notes
+The model result for the plot c01_verdonk-Wever west-201907240724-GR shows two mysterious strips in which no crops have been detected. The strips are not straight, but cross the entire plot. It might have something to do with the crop size. These strips have not been spotted in other plots, so we suspect it has to do with the detection network.
