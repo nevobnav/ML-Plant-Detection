@@ -29,17 +29,19 @@ for param in params.keys():												# load all non-string parameters
 
 #========================================== Get Parameters & Models ==========================================
 if platform == 'linux':
-	img_path = r"../../Orthomosaics/c01_verdonk-Wever west-201907240724-GR/c01_verdonk-Wever west-201907240724-GR.tif"
-	dem_path = r"../../Orthomosaics/c01_verdonk-Wever west-201907240724-GR/c01_verdonk-Wever west-201907240724_DEM-GR.tif"
-	clp_path = r"../../Orthomosaics/c01_verdonk-Wever west-201907240724-GR/c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
+	name = 'c01_verdonk-Rijweg stalling 1-201907230859'
+	GR = True
+	img_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r".tif"
+	dem_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
+	clp_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
 elif platform == 'windows':
 	img_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724-GR.tif"
 	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724_DEM-GR.tif"
 	clp_path = r"Field Shapefiles\\c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
 
-dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
+dem_functions 	 = tif_functions.get_functions_rasterio(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_adj_window	 = dem_functions['get_adjusted_window']
-get_window 		 = dem_functions['get_window']
+get_block 		 = dem_functions['get_block']
 dem_scale_factor = dem_functions['scale_factor']						# constant
 
 def windows_load(path):
@@ -146,7 +148,7 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 
 	count = 0
 
-	for i in range(0,num_rows+1):				###
+	for i in range(0,num_rows+1):
 		for j in range(0,num_cols+1):
 			i_ad, j_ad, height, width = get_adj_window(i*block_size-block_overlap, j*block_size-block_overlap,
 													   block_size+2*block_overlap, block_size+2*block_overlap)
@@ -176,7 +178,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 	for (i,j) in valid_blocks:
 		try:
 			i_ad, j_ad, height, width = valid_blocks[(i,j)]
-			c_im, h_im = get_window(i_ad, j_ad, height, width)
+			c_im, h_im = get_block(i_ad, j_ad, height, width)
 			if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
 				continue
 		except:
@@ -196,11 +198,11 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 	return data_dict
 
 def remove_duplicates(center_centroids, center_contours, other_centroids, shift):
+	picks = []
 	if len(other_centroids)>0:
 		center_tree = KDTree(center_centroids)
 		other_tree  = KDTree(other_centroids-np.ones(other_centroids.shape)*shift)
 		q = center_tree.query_ball_tree(other_tree, overlap_distance)
-		picks = []
 		for (k, neighbour_list) in enumerate(q):
 			if len(neighbour_list) < 1:
 				picks.append(k)
@@ -273,6 +275,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 					centroids = data_dict[(i,j)]['centroids']
 					(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
 
+					count = 0
 					for (k, cnt) in enumerate(contours):							# write contours
 						xs, ys = cnt[:,1] + j_ad, cnt[:,0] + i_ad
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
@@ -283,13 +286,14 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 					            			  'geometry': mapping(transformed_centroid)})
 							output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
 					            			  'geometry': mapping(transformed_points)})
+							count += 1
 
 					block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
 					transformed_vertices = [trans*(a,b) for (b,a) in block_vertices]
 					output_lines.write({'properties' : {'name': 'block ({},{})'.format(i,j)},
 										'geometry' : mapping(Polygon(transformed_vertices))})
 
-					print('Block ({},{}) written'.format(i,j))
+					print('{} crops written to block ({},{})'.format(count,i,j))
 	print('\nFinished!')
 
 if __name__ == "__main__":
