@@ -1,5 +1,5 @@
 #!/usr/bin/python3.6
-platform = 'linux'
+platform = 'windows'
 
 #================================================== Imports ==================================================
 import os
@@ -22,7 +22,7 @@ import settings
 
 #================================================= Crop Type =================================================
 crop = 'broccoli'														# which crop is present in field
-params = settings.get_settings(crop)
+params = settings.get_settings(crop, box_size=60)
 for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
@@ -128,8 +128,8 @@ def run_on_block(c_im, h_im, padding=0):
 	return contours, centroids
 
 def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
-	"""For every block, determine if it is valid by checking whether it intersects with the field specified by clp_path. 
-	Returns a dictionary of the form (i,j) : (i_ad, j_ad, height, width), where (i,j) is the index of a valid block, 
+	"""For every block, determine if it is valid by checking whether it intersects with the field specified by clp_path.
+	Returns a dictionary of the form (i,j) : (i_ad, j_ad, height, width), where (i,j) is the index of a valid block,
 	and its value are the dimensions of the adjusted box."""
 	field_shape = fiona.open(clp_path)
 	field_polygons = []
@@ -191,20 +191,22 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 			continue
 
 		data_dict[(i,j)] = {'contours':contours, 'centroids':centroids, 'block':(i_ad, j_ad, height, width)}
-		print('Block ({},{}) complete\n'.format(i, j))
+		print('Added {} crops to block ({},{})\n'.format(len(contours), i, j))
 
 	return data_dict
 
 def remove_duplicates(center_centroids, center_contours, other_centroids, shift):
 	if len(other_centroids)>0:
+		picks = []
 		center_tree = KDTree(center_centroids)
 		other_tree  = KDTree(other_centroids-np.ones(other_centroids.shape)*shift)
 		q = center_tree.query_ball_tree(other_tree, overlap_distance)
-		picks = []
 		for (k, neighbour_list) in enumerate(q):
 			if len(neighbour_list) < 1:
 				picks.append(k)
-	return center_centroids[picks], list(np.array(center_contours)[picks])
+		return center_centroids[picks], list(np.array(center_contours)[picks])
+	else:
+		return center_centroids, center_contours
 
 def process_overlap(data_dict, block_overlap):
 	"""Uses KDTree to remove duplicates in overlapping regions between two adjacent blocks."""
@@ -248,7 +250,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	trans = tif.transform
 	tif.close()
 
-	filter_edges = True
+	filter_edges = False
 
 	field_shape = fiona.open(clp_path)
 	field_polygons = []
@@ -273,6 +275,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 					centroids = data_dict[(i,j)]['centroids']
 					(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
 
+					count = 0
 					for (k, cnt) in enumerate(contours):							# write contours
 						xs, ys = cnt[:,1] + j_ad, cnt[:,0] + i_ad
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
@@ -283,23 +286,24 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 					            			  'geometry': mapping(transformed_centroid)})
 							output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
 					            			  'geometry': mapping(transformed_points)})
+							count += 1
+						else:
+							print('Crop ({},{}):{} intersects field edge'.format(i,j,k))
+					print('{} crops written to block ({},{})'.format(count,i,j))
 
 					block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
 					transformed_vertices = [trans*(a,b) for (b,a) in block_vertices]
 					output_lines.write({'properties' : {'name': 'block ({},{})'.format(i,j)},
 										'geometry' : mapping(Polygon(transformed_vertices))})
-
-					print('Block ({},{}) written'.format(i,j))
 	print('\nFinished!')
 
 if __name__ == "__main__":
 	if platform == 'linux':
-		img_name = img_path.split(r'/')[-1].split('.')[0]								# name 
+		img_name = img_path.split(r'/')[-1].split('.')[0]								# name
 		out_directory = '/'.join(img_path.split('/')[:-1])+'/Plant Count/'				# place folder Plant Count in the same folder as img_path
 	elif platform == 'windows':
-		img_name = img_path.split(r"\\")[-1].split('.')[0]	
+		img_name = img_path.split(r"\\")[-1].split('.')[0]
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=50)
-
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap)#, max_count=200)
