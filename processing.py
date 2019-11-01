@@ -8,13 +8,14 @@ from scipy.ndimage import filters
 from scipy.ndimage import measurements
 from skimage import measure
 import skimage.color
+from scipy.spatial import KDTree
 
 from shapely.geometry import Polygon
 from scipy.spatial import Delaunay
 from skimage.feature import peak_local_max
 
 # ========================================= Region Proposal =============================================
-def window_hotspots_centers(im, sigma=4, padding=0, m=2, top_left=0):
+def green_hotspots(im, sigma=4, padding=0, m=2):
 	"""RoI generator based on local minima of (u+v)-channel."""
 	if padding > 0:
 		im = im[padding:-padding, padding:-padding, :]
@@ -24,12 +25,22 @@ def window_hotspots_centers(im, sigma=4, padding=0, m=2, top_left=0):
 	im_filtered = filters.gaussian_filter(im_filtered, sigma)
 	mask = peak_local_max(-im_filtered, indices=False)#, exclude_border=False)
 	mask = np.logical_and(mask, im_filtered!=0)
-	if top_left > 0:
-		other = np.ones(mask.shape, dtype=int)
-		other[:top_left, :top_left] = 0
-		mask = np.logical_and(mask, other)
 	coords = np.argwhere(mask==1)
 	return coords+padding
+
+def dark_hotspots(im, sigma=6, padding=0, m=2):
+	"""RoI generator based on local minima of (u+v)-channel."""
+	if padding > 0:
+		im = im[padding:-padding, padding:-padding, :]
+	im_yuv = skimage.color.rgb2yuv(im)
+	im_filtered = im_yuv[:,:,0] # + im_yuv[:,:,2]
+	im_filtered = filters.minimum_filter(im_filtered, m)
+	im_filtered = filters.gaussian_filter(im_filtered, sigma)
+	mask = peak_local_max(-im_filtered, indices=False)#, exclude_border=False)
+	mask = np.logical_and(mask, im_filtered!=0)
+	coords = np.argwhere(mask==1)
+	return coords+padding
+
 
 # =========================================== Box filters ===============================================
 def sort_into_classes(rects, predictions, weeds=False):
@@ -58,6 +69,19 @@ def sort_into_classes(rects, predictions, weeds=False):
 
 	return np.array(broc_rects), np.array(broc_prob)
 		   # (np.array(weed_rects), np.array(weed_prob))
+
+def multi_class_sort(rects, predictions, bg_index=0):
+	"""Sorts each box in rects into its class as predicted by the array predictions. Returns a tuple of the
+	form ((rects_i, probs_i), ...), where probs contains the probability of the corresponding box belonging to class i."""
+	num_classes = predictions.shape[1]
+	num_candidates = predictions.shape[0]
+	indeces = [[] for k in range(num_classes)]
+	for i in range(num_candidates):
+		pred_index = np.argmax(predictions[i,:])
+		indeces[pred_index].append(i)
+	sorted_rects = [(rects[indeces[pred_index],:], predictions[indeces[pred_index], pred_index]) \
+									for pred_index in range(num_classes) if pred_index!=bg_index]
+	return tuple(sorted_rects)
 
 def non_max_suppression(boxes, probs=[], t=0.2):
 	"""Non-Max-Suppresion algorithm. boxes is an (N,4)-numpy array, where N is the number of boxes. 
@@ -154,7 +178,10 @@ def find_contours(rects, masks):
 	contours = []
 	for (i, rect) in enumerate(rects):
 		x, y, w, h = rect
-		rel_cnt = measure.find_contours(masks[i,...], 0.5)[0]
+		try:
+			rel_cnt = measure.find_contours(masks[i,...], 0.5)[0]
+		except IndexError:
+			rel_cnt = np.array([[0,0],[0,w],[h,w],[h,0]])
 		rel_cnt[:,0] += y
 		rel_cnt[:,1] += x
 		contours.append(rel_cnt)
@@ -172,10 +199,27 @@ def find_centroids(rects, masks):
 		# mask = cv2.resize(mask.astype(np.uint8), box_size)
 		x, y, w, h = rects[i,:]
 		area = mask.sum()
-		xc = np.sum(xs*mask)*box_size/mask_width
-		yc = np.sum(ys*mask.T)*box_size/mask_height
-		centroids[i,:] = [x+xc/area, y+yc/area]
+		if area==0:
+			centroids[i,:] = [x+w//2, y+h//2]
+		else:
+			xc = np.sum(xs*mask)*box_size/mask_width
+			yc = np.sum(ys*mask.T)*box_size/mask_height
+			centroids[i,:] = [x+xc/area, y+yc/area]
 	return centroids
+
+def remove_duplicates(center_centroids, center_contours, other_centroids, shift, overlap_distance=-1):
+	picks = []
+	if len(other_centroids)>0:
+		picks = []
+		center_tree = KDTree(center_centroids)
+		other_tree  = KDTree(other_centroids-np.ones(other_centroids.shape)*shift)
+		q = center_tree.query_ball_tree(other_tree, overlap_distance)
+		for (k, neighbour_list) in enumerate(q):
+			if len(neighbour_list) < 1:
+				picks.append(k)
+		return center_centroids[picks], list(np.array(center_contours)[picks])
+	else:
+		return center_centroids, center_contours
 
 # ======================================= Experimental ===========================================
 def create_big_mask(c_im, rects, masks):
