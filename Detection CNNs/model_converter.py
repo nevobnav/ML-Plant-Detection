@@ -2,7 +2,7 @@ import tensorflow.keras.models as ker_models
 import json
 
 # path = 'Detection CNNs/CROP7+SAHN4_t5.h5'
-path = 'lettuce_v6_C49.h5'
+path = 'lettuce_ternary_v2.h5'
 name = path.split('/')[-1].split('.')[0]
 model = ker_models.load_model(path)
 
