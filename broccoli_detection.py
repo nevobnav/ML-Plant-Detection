@@ -29,8 +29,8 @@ for param in params.keys():												# load all non-string parameters
 
 #========================================== Get Parameters & Models ==========================================
 if platform == 'linux':
-	name = 'c01_verdonk-Wever oost-201907240707'
-	GR = True
+	name = 'c01_verdonk-Wiering Boerderij-201907230919' #'c01_verdonk-Wever oost-201907240707' #
+	GR = False
 	img_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r".tif"
 	dem_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
 	clp_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
@@ -39,10 +39,11 @@ elif platform == 'windows':
 	dem_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859_DEM-GR.tif"
 	clp_path = r"Field Shapefiles\\c01_verdonk-Rijweg stalling 1-201907230859-GR_FIELD.shp"
 
-dem_functions 	 = tif_functions.get_functions_rasterio(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
+dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_adj_window	 = dem_functions['get_adjusted_window']
 get_block 		 = dem_functions['get_block']
-dem_scale_factor = dem_functions['scale_factor']						# constant
+transform 		 = dem_functions['transform']
+dem_scale_factor = dem_functions['scale_factor']
 
 def windows_load(path):
 	name = path.split(r'\\')[-1].split('.')[0]
@@ -141,7 +142,6 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 	tif = rasterio.open(img_path)
 	num_cols = tif.width//block_size
 	num_rows = tif.height//block_size
-	trans    = tif.transform
 	tif.close()
 
 	valid_blocks = dict()
@@ -151,7 +151,7 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 			i_ad, j_ad, height, width = get_adj_window(i*block_size-block_overlap, j*block_size-block_overlap,
 													   block_size+2*block_overlap, block_size+2*block_overlap)
 			block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
-			transformed_vertices = Polygon([trans*(a,b) for (b,a) in block_vertices])
+			transformed_vertices = Polygon([transform*(a,b) for (b,a) in block_vertices])
 			valid = False
 			for field_poly in field_polygons:
 				if field_poly.intersects(transformed_vertices):
@@ -171,6 +171,7 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 	"""Perform model on img_path by dividing it into blocks."""
 	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
+	valid_blocks = {(10,10):valid_blocks[(10,10)], (10,11):valid_blocks[(10,11)], (10,12):valid_blocks[(10,12)], (10,13):valid_blocks[(10,13)]}
 	data_dict = dict()
 
 	for (i,j) in valid_blocks:
@@ -179,12 +180,12 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 		if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
 			continue
 
-		try:
-			print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
-			contours, centroids = run_on_block(c_im, h_im, padding=box_size)
-		except:
-			print('No crops found in block ({},{})'.format(i,j))
-			continue
+		# try:
+		print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
+		contours, centroids = run_on_block(c_im, h_im, padding=box_size)
+		# except:
+		# 	print('No crops found in block ({},{})'.format(i,j))
+		# 	continue
 
 		data_dict[(i,j)] = {'contours':contours, 'centroids':centroids, 'block':(i_ad, j_ad, height, width)}
 		print('Added {} crops to block ({},{})\n'.format(len(contours), i, j))
@@ -238,17 +239,13 @@ def process_overlap(data_dict, block_overlap):
 	return data_dict
 
 #============================================ Output writer ===============================================
-def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=np.infty):
+def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=np.infty, filter_edges=True):
 	"""Writes 3 shapefiles: CONTOURS.shp, BLOCK_LINES.shp, POINTS.shp, which respectively contain crop
-	contours, block shapes and crop centroids. The tif is divided into overlapping blocks of size block_size+2*block_overlap.
+	contours, block shapes and crop centroids. Also writes a pickle file containing the output in dictionary form.
+	This dictionary also contains the dictionary with all parameters used in the simulation under the key 'metadata'. 
+	The input tif is divided into overlapping blocks of size block_size+2*block_overlap.
 	Duplicates in the overlap region are removed using KDTrees. The parameter max_count is included for debug purposes;
 	the process is terminated after max_count blocks."""
-	tif = rasterio.open(img_path)
-	trans = tif.transform
-	tif.close()
-
-	filter_edges = True
-
 	field_shape = fiona.open(clp_path)
 	field_polygons = []
 	for feature in field_shape:
@@ -258,8 +255,6 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 
 	data_dict = run_model(block_size, block_overlap, max_count=max_count)
 	data_dict = process_overlap(data_dict, block_overlap)
-	with open(out_dir+'DATA.pickle', 'wb') as file:
-		pickle.dump(data_dict, file)
 
 	schema_lines = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
 	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' } }
@@ -278,8 +273,8 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 					for (k, cnt) in enumerate(contours):							# write contours
 						xs, ys = cnt[:,1] + j_ad, cnt[:,0] + i_ad
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
-						transformed_points   = Polygon([trans*(xs[l],ys[l]) for l in range(len(xs))])
-						transformed_centroid = Point(trans*centroid)
+						transformed_points   = Polygon([transform*(xs[l],ys[l]) for l in range(len(xs))])
+						transformed_centroid = Point(transform*centroid)
 						try:
 							if transformed_points.difference(field).is_empty or not filter_edges:			# if contour is complete enclosed in field
 								output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
@@ -294,9 +289,13 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 					print('{} crops written to block ({},{})'.format(count,i,j))
 
 					block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
-					transformed_vertices = [trans*(a,b) for (b,a) in block_vertices]
+					transformed_vertices = [transform*(a,b) for (b,a) in block_vertices]
 					output_lines.write({'properties' : {'name': 'block ({},{})'.format(i,j)},
 										'geometry' : mapping(Polygon(transformed_vertices))})
+
+	data_dict['metadata'] = params
+	with open(out_dir+'DATA.pickle', 'wb') as file:
+		pickle.dump(data_dict, file)
 
 	print('\nFinished!')
 
@@ -309,4 +308,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=50)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=200)
