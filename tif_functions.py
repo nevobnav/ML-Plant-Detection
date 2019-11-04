@@ -40,7 +40,6 @@ def get_functions_rasterio(img_path, dem_path, clip_path=None):
 		img = rasterio.open(img_path)
 
 	dem = rasterio.open(dem_path)
-	scale_factor = img.transform[0]/dem.transform[0]
 
 	def get_dem_pixel(i_img, j_img):
 		return dem.index(*img.xy(i_img, j_img))
@@ -89,8 +88,7 @@ def get_functions_rasterio(img_path, dem_path, clip_path=None):
 	func_dict = dict()
 	for f in [get_dem_pixel, get_slices, get_adjusted_window, get_block]:
 		func_dict[f.__name__] = f
-
-	func_dict['scale_factor'] = scale_factor
+	func_dict['transform'] = img.transform
 	return func_dict
 
 def get_functions(img_path, dem_path, clip_path=None):
