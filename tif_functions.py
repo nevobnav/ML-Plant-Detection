@@ -39,28 +39,11 @@ def get_functions_rasterio(img_path, dem_path, clip_path=None):
 	else:
 		img = rasterio.open(img_path)
 
-	# img = rasterio.open(img_path)
 	dem = rasterio.open(dem_path)
-	trans_img = img.transform
-	trans_dem = dem.transform
-
-	scale_factor = trans_img[0]/trans_dem[0]
-	width  = img.width
-	height = img.height
-
-	def xy_img(i_img, j_img):
-		"""Geotransform (i_img,j_img)_RGB -> (x,y)."""
-		return rasterio.transform.xy(trans_img, i_img, j_img)
-
-	def rowcol_dem(x, y):
-		"""Inverse geotransform (x,y) -> (i_dem,j_dem)."""
-		return rasterio.transform.rowcol(trans_dem, x, y)
+	scale_factor = img.transform[0]/dem.transform[0]
 
 	def get_dem_pixel(i_img, j_img):
-		"""Composition of rowcol_dem with xy_img, to compute H-pixel from RGB-pixel."""
-		i_dem, j_dem = rowcol_dem(*tuple(xy_img(i_img, j_img)))
-		# i_dem, j_dem = int(np.round(i_dem)), int(np.round(j_dem))
-		return i_dem, j_dem
+		return dem.index(*img.xy(i_img, j_img))
 
 	def get_color_slice(i_img, j_img, num_rows, num_cols):
 		"""Returns (num_rows, num_cols, 3) numpy array represting the RGB-slice i_img:i_img+num_rows, j_img:j_img+num_cols."""
@@ -88,13 +71,13 @@ def get_functions_rasterio(img_path, dem_path, clip_path=None):
 		if i_img<0:											# north border
 			num_rows = num_rows-abs(i_img)
 			i_img = max(0, i_img)
-		elif i_img+num_rows>height:					# sourth border
-			num_rows = min(height - i_img, num_rows)
+		elif i_img+num_rows>img.height:					# sourth border
+			num_rows = min(img.height - i_img, num_rows)
 		if j_img<0:											# west border
 			num_cols = num_cols-abs(j_img)
 			j_img = max(0, j_img)
-		elif j_img+num_cols>width:					# east border
-			num_cols = min(width-j_img, num_cols)
+		elif j_img+num_cols>img.width:					# east border
+			num_cols = min(img.width-j_img, num_cols)
 		return i_img, j_img, num_rows, num_cols
 
 	def get_block(i_img, j_img, num_rows, num_cols):
@@ -108,10 +91,6 @@ def get_functions_rasterio(img_path, dem_path, clip_path=None):
 		func_dict[f.__name__] = f
 
 	func_dict['scale_factor'] = scale_factor
-	# func_dict['delta_c'] 	  = pixel_size_img 							# long-lat pixel step size in RGB image (degrees)
-	# func_dict['delta_h'] 	  = pixel_size_dem 							# long-lat step size in H image (degrees)
-	# func_dict['delta_c_m']    = R_EARTH*np.sin(np.pi-north_img/180*np.pi)*np.pi*pixel_size_img/180		# pixel size in meters
-	# func_dict['delta_h_m']    = R_EARTH*np.sin(np.pi-north_dem/180*np.pi)*np.pi*pixel_size_dem/180
 	return func_dict
 
 def get_functions(img_path, dem_path, clip_path=None):
