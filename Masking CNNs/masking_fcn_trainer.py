@@ -104,6 +104,7 @@ def make_fcn(input_model):
 	c5 = conv5_fcn(p2)
 	c6 = conv6_fcn(c5)
 	c7 = conv7_fcn(c6)
+	
 	fcn8 = layers.Conv2D(filters=1, kernel_size=1, name='fcn8')(c7)
 	fcn9 = layers.Conv2DTranspose(filters=c4.get_shape().as_list()[-1], kernel_size=4, strides=(2,2), padding='same', name='fcn9')(fcn8)
 	fcn9_skip = layers.Add()([fcn9, c4]) #, name='skip')

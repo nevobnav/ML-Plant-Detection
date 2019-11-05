@@ -27,13 +27,13 @@ for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
 
-#========================================== Get Parameters & Models ==========================================
+#====================================== Get Parameters & Absolute Paths ======================================
 if platform == 'linux':
-	name = 'c01_verdonk-Wiering Boerderij-201907230919' #'c01_verdonk-Wever oost-201907240707' #
-	GR = False
-	img_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r".tif"
-	dem_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
-	clp_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
+	name = 'c01_verdonk-Wever oost-201907240707' #'c01_verdonk-Wever oost-201907240707' #
+	GR = True
+	img_path = r"home/duncan/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r".tif"
+	dem_path = r"home/duncan/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
+	clp_path = r"home/duncan/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
 elif platform == 'windows':
 	img_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859-GR.tif"
 	dem_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859_DEM-GR.tif"
@@ -106,29 +106,29 @@ def run_on_block(c_im, h_im, padding=0):
 	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
 
 	predictions = box_model.predict([c_crops, h_crops], verbose=1)								# run classification model
-	broc_rects, broc_probs = proc.sort_into_classes(c_rects, predictions)
-	broc_rects, broc_probs = proc.non_max_suppression(broc_rects, probs=broc_probs, t=overlap_threshold)
-	masks = proc.get_masks(broc_rects, c_im, mask_model, verbose=1)								# compute masks for each box
+	boxes, confidence = proc.sort_into_classes(c_rects, predictions)
+	boxes, confidence = proc.non_max_suppression(boxes, probs=confidence, t=overlap_threshold)
+	masks = proc.get_masks(boxes, c_im, mask_model, verbose=1)								# compute masks for each box
 
 	if filter_empty_masks:
-		broc_rects, broc_probs, masks = proc.discard_empty(broc_rects, broc_probs, masks, t=crop_size_threshold)
+		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
 
 	if filter_disjoint:
 		masks = proc.remove_unconnected_components(masks)
 
 	if recenter:
-		broc_rects, altered = proc.recenter_boxes(broc_rects, masks, d=center_distance)			# indeces of moved boxes
-		new_masks = proc.get_masks(broc_rects[altered], c_im, mask_model, verbose=1)			# compute new masks of moved boxes
+		boxes, altered = proc.recenter_boxes(boxes, masks, d=center_distance)			# indeces of moved boxes
+		new_masks = proc.get_masks(boxes[altered], c_im, mask_model, verbose=1)			# compute new masks of moved boxes
 		if filter_disjoint:
 			new_masks = proc.remove_unconnected_components(new_masks)
 		masks[altered] = new_masks																# set new masks
 		if filter_empty_masks:
-			broc_rects, broc_probs, masks = proc.discard_empty(broc_rects, broc_probs, masks, t=crop_size_threshold)
+			boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
 
-	contours  = proc.find_contours(broc_rects, masks)
-	centroids = proc.find_centroids(broc_rects, masks)
+	contours  = proc.find_contours(boxes, masks)
+	centroids = proc.find_centroids(boxes, masks)
 
-	return contours, centroids
+	return contours, centroids, confidence, boxes
 
 def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 	"""For every block, determine if it is valid by checking whether it intersects with the field specified by clp_path.
@@ -171,7 +171,7 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 	"""Perform model on img_path by dividing it into blocks."""
 	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
-	valid_blocks = {(10,10):valid_blocks[(10,10)], (10,11):valid_blocks[(10,11)], (10,12):valid_blocks[(10,12)], (10,13):valid_blocks[(10,13)]}
+	# valid_blocks = {(10,10):valid_blocks[(10,10)], (10,11):valid_blocks[(10,11)], (10,12):valid_blocks[(10,12)], (10,13):valid_blocks[(10,13)]}
 	data_dict = dict()
 
 	for (i,j) in valid_blocks:
@@ -180,14 +180,18 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 		if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
 			continue
 
-		# try:
-		print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
-		contours, centroids = run_on_block(c_im, h_im, padding=box_size)
-		# except:
-		# 	print('No crops found in block ({},{})'.format(i,j))
-		# 	continue
+		try:
+			print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
+			contours, centroids, confidence, boxes = run_on_block(c_im, h_im, padding=box_size)
+		except:
+			print('No crops found in block ({},{})'.format(i,j))
+			continue
 
-		data_dict[(i,j)] = {'contours':contours, 'centroids':centroids, 'block':(i_ad, j_ad, height, width)}
+		data_dict[(i,j)] = {'contours'  : contours, 
+							'centroids' : centroids, 
+							'block'		: (i_ad, j_ad, height, width),
+							'confidence': confidence,
+							'boxes'		: boxes}
 		print('Added {} crops to block ({},{})\n'.format(len(contours), i, j))
 
 	return data_dict
@@ -257,8 +261,8 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	data_dict = process_overlap(data_dict, block_overlap)
 
 	schema_lines = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
-	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' } }
-	schema_cnt   = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
+	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' , 'confidence':'float'} }
+	schema_cnt   = { 'geometry': 'Polygon', 'properties': { 'name': 'str' , 'confidence':'float'} }
 
 	with fiona.collection(out_dir+'CONTOURS.shp', "w", "ESRI Shapefile", schema_cnt, crs=from_epsg(4326)) as output_cnt:					# add projection
 		with fiona.collection(out_dir+'POINTS.shp', "w", "ESRI Shapefile", schema_pnt, crs=from_epsg(4326)) as output_pnt:
@@ -267,6 +271,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 				for (i,j) in data_dict:
 					contours  = data_dict[(i,j)]['contours']
 					centroids = data_dict[(i,j)]['centroids']
+					probs 	  = data_dict[(i,j)]['confidence']
 					(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
 
 					count = 0
@@ -277,10 +282,10 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 						transformed_centroid = Point(transform*centroid)
 						try:
 							if transformed_points.difference(field).is_empty or not filter_edges:			# if contour is complete enclosed in field
-								output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
+								output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(probs[k])},
 						            			  'geometry': mapping(transformed_centroid)})
-								output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k)},
-							            			  'geometry': mapping(transformed_points)})
+								output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(probs[k])},
+							            		  'geometry': mapping(transformed_points)})
 								count += 1
 							else:
 								print('Crop ({},{}):{} intersects field edge'.format(i,j,k))
@@ -293,6 +298,9 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 					output_lines.write({'properties' : {'name': 'block ({},{})'.format(i,j)},
 										'geometry' : mapping(Polygon(transformed_vertices))})
 
+	params['input_tif'] = img_path
+	params['input_dem'] = dem_path
+	params['input_clp'] = clp_path
 	data_dict['metadata'] = params
 	with open(out_dir+'DATA.pickle', 'wb') as file:
 		pickle.dump(data_dict, file)
@@ -308,4 +316,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=200)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=20)

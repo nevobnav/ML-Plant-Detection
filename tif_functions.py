@@ -34,8 +34,8 @@ def get_clip_slice(clip, i_img, j_img, num_rows, num_cols):
 
 def get_functions(img_path, dem_path, clip_path=None):
 	if clip_path != None:
-		clip_ortho2shp_array(img_path, clip_path, out='tmp.vrt')
-		img = rasterio.open('tmp.vrt')
+		clip_ortho2shp_array(img_path, clip_path, out='.tmp.vrt')
+		img = rasterio.open('.tmp.vrt')
 	else:
 		img = rasterio.open(img_path)
 
