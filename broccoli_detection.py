@@ -31,9 +31,9 @@ for param in params.keys():												# load all non-string parameters
 if platform == 'linux':
 	name = 'c01_verdonk-Wever oost-201907240707' #'c01_verdonk-Wever oost-201907240707' #
 	GR = True
-	img_path = r"home/duncan/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r".tif"
-	dem_path = r"home/duncan/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
-	clp_path = r"home/duncan/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
+	img_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r".tif"
+	dem_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
+	clp_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
 elif platform == 'windows':
 	img_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859-GR.tif"
 	dem_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859_DEM-GR.tif"
@@ -97,18 +97,18 @@ def fill_data_tensor(c_im, h_im, c_rects, h_rects):
 			raise IndexError('cropping failed with c_rect = ({}, {}, {}, {}), h_rect=({}, {}, {}, {})'.format(x_c, y_c, w_c, h_c, x_h, y_h, w_h, h_h))
 	return c_crops, h_crops
 
-def run_on_block(c_im, h_im, padding=0):
+def run_on_block(c_im, h_im, padding=0, get_background=False):
 	"""Run complete model on the block c_im and its corresponding height block h_im."""
 	if c_im.mean() <= 2:		# black part
 		raise IndexError
-	c_coords = proc.green_hotspots(c_im, sigma=sigma, padding=padding)		# run region proposer
+	c_coords = proc.green_hotspots(c_im, sigma=sigma, padding=padding)							# run region proposer
 	c_rects, h_rects = create_boxes(c_coords)
 	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
 
 	predictions = box_model.predict([c_crops, h_crops], verbose=1)								# run classification model
-	boxes, confidence = proc.sort_into_classes(c_rects, predictions)
+	boxes, confidence = proc.get_class(c_rects, predictions, 1)
 	boxes, confidence = proc.non_max_suppression(boxes, probs=confidence, t=overlap_threshold)
-	masks = proc.get_masks(boxes, c_im, mask_model, verbose=1)								# compute masks for each box
+	masks = proc.get_masks(boxes, c_im, mask_model, verbose=1)									# compute masks for each box
 
 	if filter_empty_masks:
 		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
@@ -128,7 +128,11 @@ def run_on_block(c_im, h_im, padding=0):
 	contours  = proc.find_contours(boxes, masks)
 	centroids = proc.find_centroids(boxes, masks)
 
-	return contours, centroids, confidence, boxes
+	if get_background:
+		background_boxes, background_confidence = proc.get_class(c_rects, predictions, 0)
+		return contours, centroids, confidence, boxes, background_boxes, background_confidence
+	else:
+		return contours, centroids, confidence, boxes
 
 def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 	"""For every block, determine if it is valid by checking whether it intersects with the field specified by clp_path.
@@ -168,11 +172,14 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 	print('Found {} valid blocks of a total of {}'.format(len(valid_blocks), (num_rows+1)*(num_cols+1)))
 	return valid_blocks
 
-def run_model(block_size, block_overlap=box_size, max_count=np.infty):
+def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_background=False):
 	"""Perform model on img_path by dividing it into blocks."""
 	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
 	# valid_blocks = {(10,10):valid_blocks[(10,10)], (10,11):valid_blocks[(10,11)], (10,12):valid_blocks[(10,12)], (10,13):valid_blocks[(10,13)]}
+
 	data_dict = dict()
+	if get_background:
+		background_dict = dict()
 
 	for (i,j) in valid_blocks:
 		i_ad, j_ad, height, width = valid_blocks[(i,j)]
@@ -181,8 +188,12 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 			continue
 
 		try:
-			print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
-			contours, centroids, confidence, boxes = run_on_block(c_im, h_im, padding=box_size)
+			# print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
+			if get_background:
+				contours, centroids, confidence, boxes, background_boxes, background_confidence\
+							 = run_on_block(c_im, h_im, padding=box_size, get_background=get_background)
+			else:
+				contours, centroids, confidence, boxes = run_on_block(c_im, h_im, padding=box_size)
 		except:
 			print('No crops found in block ({},{})'.format(i,j))
 			continue
@@ -192,9 +203,17 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty):
 							'block'		: (i_ad, j_ad, height, width),
 							'confidence': confidence,
 							'boxes'		: boxes}
+		if get_background:
+			background_dict[(i,j)] = {'background_boxes': background_boxes, 
+									  'background_confidence':background_confidence,
+									  'block'		: (i_ad, j_ad, height, width)}
+
 		print('Added {} crops to block ({},{})\n'.format(len(contours), i, j))
 
-	return data_dict
+	if get_background:
+		return data_dict, background_dict
+	else:
+		return data_dict
 
 def remove_duplicates(center_centroids, center_contours, other_centroids, shift):
 	picks = []
@@ -243,7 +262,7 @@ def process_overlap(data_dict, block_overlap):
 	return data_dict
 
 #============================================ Output writer ===============================================
-def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=np.infty, filter_edges=True):
+def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=np.infty, filter_edges=True, get_background=False):
 	"""Writes 3 shapefiles: CONTOURS.shp, BLOCK_LINES.shp, POINTS.shp, which respectively contain crop
 	contours, block shapes and crop centroids. Also writes a pickle file containing the output in dictionary form.
 	This dictionary also contains the dictionary with all parameters used in the simulation under the key 'metadata'. 
@@ -257,7 +276,11 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 		field_polygons.append(poly)
 	field = MultiPolygon(field_polygons)
 
-	data_dict = run_model(block_size, block_overlap, max_count=max_count)
+	output = run_model(block_size, block_overlap, max_count=max_count, get_background=get_background)
+	if get_background:
+		data_dict, background_dict = output
+	else:
+		data_dict = output
 	data_dict = process_overlap(data_dict, block_overlap)
 
 	schema_lines = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
@@ -302,8 +325,12 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	params['input_dem'] = dem_path
 	params['input_clp'] = clp_path
 	data_dict['metadata'] = params
+
 	with open(out_dir+'DATA.pickle', 'wb') as file:
 		pickle.dump(data_dict, file)
+	if get_background:
+		with open(out_dir+'BG_DATA.pickle', 'wb') as bg_file:
+			pickle.dump(background_dict, bg_file)
 
 	print('\nFinished!')
 
@@ -316,4 +343,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=20)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=15, get_background=True)

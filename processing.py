@@ -83,6 +83,21 @@ def multi_class_sort(rects, predictions, bg_index=0):
 									for pred_index in range(num_classes) if pred_index!=bg_index]
 	return tuple(sorted_rects)
 
+def get_class(rects, predictions, class_index):
+	"""Returns boxes and confidence arrays of a single class, specified by class_index."""
+	num_candidates = predictions.shape[0]
+	idxs = []
+	boxes, probs = [], []
+
+	for i in range(num_candidates):
+		pred_index = np.argmax(predictions[i,:])		# prediction index corresponds to label name
+		if pred_index == class_index:								
+			idxs.append(i)					# store index belonging to predicted broccoli
+			boxes.append(rects[i,:])
+			probs.append(predictions[i, pred_index])
+
+	return np.array(boxes), np.array(probs)
+
 def non_max_suppression(boxes, probs=[], t=0.2):
 	"""Non-Max-Suppresion algorithm. boxes is an (N,4)-numpy array, where N is the number of boxes. 
 	One row of the array boxes should be of the form [x, y, w, h], where (x,y) is the lower left 
