@@ -29,7 +29,7 @@ for param in params.keys():												# load all non-string parameters
 
 #====================================== Get Parameters & Absolute Paths ======================================
 if platform == 'linux':
-	name = 'c01_verdonk-Rijweg stalling 2-201907170908' #'c01_verdonk-Wever oost-201907240707' #
+	name = 'c01_verdonk-Wever oost-201907240707' #'c01_verdonk-Wever oost-201907240707' #
 	GR = True
 	img_path = r"/home/duncan/Documents/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r".tif"
 	dem_path = r"/home/duncan/Documents/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
@@ -104,7 +104,7 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
 
 	predictions, masks = network.predict([c_crops, h_crops], verbose=1)								# run classification model
-	print(predictions)
+	print(masks.shape)
 	crop_idxs = proc.get_class_idxs(predictions, 1)
 	print(len(crop_idxs))
 	boxes, confidence, masks = c_rects[crop_idxs], predictions[crop_idxs], masks[crop_idxs]
@@ -126,8 +126,8 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	# 	if filter_empty_masks:
 	# 		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
 
-	contours  = proc.find_contours(boxes, masks)
-	centroids = proc.find_centroids(boxes, masks)
+	contours  = proc.find_contours(boxes, masks[...,0])
+	centroids = proc.find_centroids(boxes, masks[...,0])
 
 	if get_background:
 		background_boxes, background_confidence = proc.get_class(c_rects, predictions, 0)
@@ -177,7 +177,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 	"""Perform model on img_path by dividing it into blocks."""
 	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
 	print(valid_blocks.keys())
-	valid_blocks = {(10,21):valid_blocks[(10,21)], (10,22):valid_blocks[(10,22)], (10,23):valid_blocks[(10,23)]}
+	valid_blocks = {(10,21):valid_blocks[(10,21)], (10,22):valid_blocks[(10,22)]}#, (10,23):valid_blocks[(10,23)]}
 
 	data_dict = dict()
 	if get_background:
@@ -305,11 +305,11 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
 						transformed_points   = Polygon([transform*(xs[l],ys[l]) for l in range(len(xs))])
 						transformed_centroid = Point(transform*centroid)
+						output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
+						            	  'geometry': mapping(transformed_centroid)})
 						try:
 							if transformed_points.difference(field).is_empty or not filter_edges:			# if contour is complete enclosed in field
-								output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(probs[k])},
-						            			  'geometry': mapping(transformed_centroid)})
-								output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(probs[k])},
+								output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
 							            		  'geometry': mapping(transformed_points)})
 								count += 1
 							else:
