@@ -118,18 +118,18 @@ def show_prediction(model, RGB_tensor, H_tensor, class_names=None):
 	plt.show()
 
 if __name__ == "__main__":
-	master_dir = '/home/duncan/Documents/VanBoven/DL Datasets/Unified Broccoli/'
+	master_dir = '/home/duncan/Documents/VanBoven/Code/Git Folder/testing/'
 	c_dir  	 = 'Training Data Color/'
 	h_dir 	 = 'Training Data Height/'
 	mask_dir = 'Training Data Mask/'
 	num_classes = len(os.listdir(master_dir+c_dir))
 
-	# model = create_network(num_classes)
-	model = models.load_model('Unified CNNs/broccoli_unified.h5')
+	model = create_network(num_classes)
+	# model = models.load_model('Unified CNNs/broccoli_unified.h5')
 
 	input_tensors, output_tensors = init_data_tensors(c_size, h_size, master_dir, c_dir, h_dir, mask_dir)
 
-	model.fit(input_tensors, output_tensors, epochs=1, steps_per_epoch=1)
+	model.fit(input_tensors, output_tensors, epochs=1, steps_per_epoch=100)
 	model.save('Unified CNNs/broccoli_unified.h5')
 
 	idxs = [0, 1, 2, 3, 4]

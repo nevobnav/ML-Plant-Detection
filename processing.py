@@ -83,6 +83,15 @@ def multi_class_sort(rects, predictions, bg_index=0):
 									for pred_index in range(num_classes) if pred_index!=bg_index]
 	return tuple(sorted_rects)
 
+def get_class_idxs(predictions, class_index):
+	num_candidates = predictions.shape[0]
+	idxs = []
+	for i in range(num_candidates):
+		pred_index = np.argmax(predictions[i,:])		# prediction index corresponds to label name
+		if pred_index == class_index:								
+			idxs.append(i)					# store index belonging to predicted broccoli
+	return idxs
+
 def get_class(rects, predictions, class_index):
 	"""Returns boxes and confidence arrays of a single class, specified by class_index."""
 	num_candidates = predictions.shape[0]
@@ -98,7 +107,7 @@ def get_class(rects, predictions, class_index):
 
 	return np.array(boxes), np.array(probs)
 
-def non_max_suppression(boxes, probs=[], t=0.2):
+def non_max_suppression(boxes, other=(), t=0.2):
 	"""Non-Max-Suppresion algorithm. boxes is an (N,4)-numpy array, where N is the number of boxes. 
 	One row of the array boxes should be of the form [x, y, w, h], where (x,y) is the lower left 
 	edge of the box, w its width and h its height."""
@@ -121,8 +130,8 @@ def non_max_suppression(boxes, probs=[], t=0.2):
 		h = np.maximum(0, yy2 - yy1 + 1)
 		overlap = (w * h) / area[idxs[:last]]
 		idxs = np.delete(idxs, np.concatenate(([last], np.where(overlap > t)[0])))		# delete last b/c we checked it, and delete all indeces for which the overlap is large
-	if len(probs) > 0:
-		return boxes[pick], probs[pick]					# list as index only works with numpy arrays
+	if len(other) > 0:
+		return boxes[pick], (o[pick] for o in other)					# list as index only works with numpy arrays
 	else:
 		return boxes[pick]
 
