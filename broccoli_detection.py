@@ -1,5 +1,5 @@
 #!/usr/bin/python3.6
-platform = 'linux'
+platform = 'windows'
 
 #================================================== Imports ==================================================
 import os
@@ -22,22 +22,22 @@ import tif_functions
 import settings
 
 #================================================= Crop Type =================================================
-params = settings.get_settings('broccoli', box_size=50, block_size=500)
+params = settings.get_settings('broccoli', box_size=50, block_size=700)
 for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
 
 #====================================== Get Parameters & Absolute Paths ======================================
 if platform == 'linux':
-	name = 'c01_verdonk-Wever oost-201907240707' #'c01_verdonk-Wever oost-201907240707' #
+	name = 'c01_verdonk-Wever west-201907170749' #'c01_verdonk-Wever oost-201907240707' #
 	GR = True
 	img_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r".tif"
 	dem_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
 	clp_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
 elif platform == 'windows':
-	img_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859-GR.tif"
-	dem_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859_DEM-GR.tif"
-	clp_path = r"Field Shapefiles\\c01_verdonk-Rijweg stalling 1-201907230859-GR_FIELD.shp"
+	img_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907170749-GR.tif"
+	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907170749_DEM-GR.tif"
+	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\c01_verdonk-Wever west-201907170749-GR_FIELD.shp"
 
 dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_adj_window	 = dem_functions['get_adjusted_window']
@@ -106,8 +106,9 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
 
 	predictions = box_model.predict([c_crops, h_crops], verbose=1)								# run classification model
-	boxes, confidence = proc.get_class(c_rects, predictions, 1)
-	boxes, confidence = proc.non_max_suppression(boxes, probs=confidence, t=overlap_threshold)
+	idxs = proc.get_class_idxs(predictions, 1)
+	boxes, confidence = c_rects[idxs], predictions[idxs]
+	boxes, confidence = proc.non_max_suppression(boxes, other=[confidence], t=overlap_threshold)
 	masks = proc.get_masks(boxes, c_im, mask_model, verbose=1)									# compute masks for each box
 
 	if filter_empty_masks:
@@ -188,7 +189,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 			continue
 
 		try:
-			# print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
+			print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
 			if get_background:
 				contours, centroids, confidence, boxes, background_boxes, background_confidence\
 							 = run_on_block(c_im, h_im, padding=box_size, get_background=get_background)
@@ -198,13 +199,13 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 			print('No crops found in block ({},{})'.format(i,j))
 			continue
 
-		data_dict[(i,j)] = {'contours'  : contours, 
-							'centroids' : centroids, 
+		data_dict[(i,j)] = {'contours'  : contours,
+							'centroids' : centroids,
 							'block'		: (i_ad, j_ad, height, width),
 							'confidence': confidence,
 							'boxes'		: boxes}
 		if get_background:
-			background_dict[(i,j)] = {'background_boxes': background_boxes, 
+			background_dict[(i,j)] = {'background_boxes': background_boxes,
 									  'background_confidence':background_confidence,
 									  'block'		: (i_ad, j_ad, height, width)}
 
@@ -265,7 +266,7 @@ def process_overlap(data_dict, block_overlap):
 def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=np.infty, filter_edges=True, get_background=False):
 	"""Writes 3 shapefiles: CONTOURS.shp, BLOCK_LINES.shp, POINTS.shp, which respectively contain crop
 	contours, block shapes and crop centroids. Also writes a pickle file containing the output in dictionary form.
-	This dictionary also contains the dictionary with all parameters used in the simulation under the key 'metadata'. 
+	This dictionary also contains the dictionary with all parameters used in the simulation under the key 'metadata'.
 	The input tif is divided into overlapping blocks of size block_size+2*block_overlap.
 	Duplicates in the overlap region are removed using KDTrees. The parameter max_count is included for debug purposes;
 	the process is terminated after max_count blocks."""
@@ -294,7 +295,8 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 				for (i,j) in data_dict:
 					contours  = data_dict[(i,j)]['contours']
 					centroids = data_dict[(i,j)]['centroids']
-					probs 	  = data_dict[(i,j)]['confidence']
+					probs 	  = data_dict[(i,j)]['confidence'][0,...]
+					print(probs.shape)
 					(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
 
 					count = 0
@@ -305,9 +307,9 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 						transformed_centroid = Point(transform*centroid)
 						try:
 							if transformed_points.difference(field).is_empty or not filter_edges:			# if contour is complete enclosed in field
-								output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(probs[k])},
+								output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
 						            			  'geometry': mapping(transformed_centroid)})
-								output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(probs[k])},
+								output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
 							            		  'geometry': mapping(transformed_points)})
 								count += 1
 							else:
@@ -343,4 +345,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=15, get_background=True)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=9, get_background=True)

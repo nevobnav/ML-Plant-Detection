@@ -41,7 +41,6 @@ def dark_hotspots(im, sigma=6, padding=0, m=2):
 	coords = np.argwhere(mask==1)
 	return coords+padding
 
-
 # =========================================== Box filters ===============================================
 def sort_into_classes(rects, predictions, weeds=False):
 	"""Sort bounding boxes into the class broccoli, background (."""
@@ -68,7 +67,6 @@ def sort_into_classes(rects, predictions, weeds=False):
 			weed_prob.append(predictions[i,pred_index])
 
 	return np.array(broc_rects), np.array(broc_prob)
-		   # (np.array(weed_rects), np.array(weed_prob))
 
 def multi_class_sort(rects, predictions, bg_index=0):
 	"""Sorts each box in rects into its class as predicted by the array predictions. Returns a tuple of the
@@ -88,7 +86,7 @@ def get_class_idxs(predictions, class_index):
 	idxs = []
 	for i in range(num_candidates):
 		pred_index = np.argmax(predictions[i,:])		# prediction index corresponds to label name
-		if pred_index == class_index:								
+		if pred_index == class_index:
 			idxs.append(i)					# store index belonging to predicted broccoli
 	return idxs
 
@@ -100,7 +98,7 @@ def get_class(rects, predictions, class_index):
 
 	for i in range(num_candidates):
 		pred_index = np.argmax(predictions[i,:])		# prediction index corresponds to label name
-		if pred_index == class_index:								
+		if pred_index == class_index:
 			idxs.append(i)					# store index belonging to predicted broccoli
 			boxes.append(rects[i,:])
 			probs.append(predictions[i, pred_index])
@@ -108,8 +106,8 @@ def get_class(rects, predictions, class_index):
 	return np.array(boxes), np.array(probs)
 
 def non_max_suppression(boxes, other=(), t=0.2):
-	"""Non-Max-Suppresion algorithm. boxes is an (N,4)-numpy array, where N is the number of boxes. 
-	One row of the array boxes should be of the form [x, y, w, h], where (x,y) is the lower left 
+	"""Non-Max-Suppresion algorithm. boxes is an (N,4)-numpy array, where N is the number of boxes.
+	One row of the array boxes should be of the form [x, y, w, h], where (x,y) is the lower left
 	edge of the box, w its width and h its height."""
 	pick = []										# list containing indeces of boxes that we want to keep
 	x1 = boxes[:,0]									# x1 = x
@@ -156,8 +154,9 @@ def get_masks(rects, c_im, model, verbose=1):
 def discard_empty(rects, prob, masks, t=0.01):
 	"""Discards rectangles which are nearly empty. The parameter t determines the minimum amount of the
 	box that should be filled as a fraction of the total area."""
-	crop_areas = np.sum(np.sum(masks, axis=2), axis=1)
+	crop_areas = np.sum(np.sum(masks, axis=2), axis=1)#[:,0]
 	is_almost_empty = crop_areas < t*rects[:,2]*rects[:,3]
+	print(crop_areas.shape, is_almost_empty.shape)
 	filtered_rects = np.array([elt for (i,elt) in enumerate(rects) if not is_almost_empty[i]])
 	filtered_prob  = np.array([elt for (i,elt) in enumerate(prob)  if not is_almost_empty[i]])
 	filtered_masks = np.array([elt for (i,elt) in enumerate(masks) if not is_almost_empty[i]])
@@ -202,8 +201,11 @@ def find_contours(rects, masks):
 	contours = []
 	for (i, rect) in enumerate(rects):
 		x, y, w, h = rect
+		mask = masks[i,...] # cv2.resize(masks[i,...], (w, h))
 		try:
-			rel_cnt = measure.find_contours(masks[i,...], 0.5)[0]
+			rel_cnt = measure.find_contours(mask, 0.5)[0].astype(float)
+			rel_cnt[:,0] = rel_cnt[:,0]*w/mask.shape[1]
+			rel_cnt[:,1] = rel_cnt[:,1]*h/mask.shape[0]
 		except IndexError:
 			rel_cnt = np.array([[0,0],[0,w],[h,w],[h,0]])
 		rel_cnt[:,0] += y
@@ -255,7 +257,7 @@ def create_big_mask(c_im, rects, masks):
 		mask = masks[i,...]
 		# reshaped_mask = cv2.resize(mask.astype(np.uint8), (w,h))
 		big_mask[y:y+h, x:x+w] = np.logical_or(mask, big_mask[y:y+h, x:x+w])
-	return big_mask 
+	return big_mask
 
 def find_contours_big(big_mask):
 	"""Finds the contours around each blob in big_mask. Returns a numpy array of shape (N, 2), where N
@@ -305,4 +307,3 @@ if __name__ == "__main__":
 		plt.plot(cnt[:,1], cnt[:,0], 'w', lw=0.5)
 		plt.text(cnt[:,1].mean(), cnt[:,0].mean(), '{:.3f}'.format(w[i]), ha='center')
 	plt.show()
-		
