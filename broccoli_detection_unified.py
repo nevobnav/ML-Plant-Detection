@@ -1,5 +1,5 @@
 #!/usr/bin/python3.6
-platform = 'linux'
+platform = 'windows'
 
 #================================================== Imports ==================================================
 import os
@@ -37,7 +37,7 @@ if platform == 'linux':
 elif platform == 'windows':
 	img_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859-GR.tif"
 	dem_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859_DEM-GR.tif"
-	clp_path = r"Field Shapefiles\\c01_verdonk-Rijweg stalling 1-201907230859-GR_FIELD.shp"
+	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\c01_verdonk-Rijweg stalling 1-201907230859-GR_FIELD.shp"
 
 dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_adj_window	 = dem_functions['get_adjusted_window']
@@ -103,19 +103,17 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	c_rects, h_rects = create_boxes(c_coords)
 	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
 
-	predictions, masks = network.predict([c_crops, h_crops], verbose=1)								# run classification model
-	print(masks.shape)
+	predictions, masks = network.predict([c_crops, h_crops], verbose=1)							# run classification model
+	masks = masks[...,0]
 	crop_idxs = proc.get_class_idxs(predictions, 1)
-	print(len(crop_idxs))
 	boxes, confidence, masks = c_rects[crop_idxs], predictions[crop_idxs], masks[crop_idxs]
 	boxes, (confidence, masks) = proc.non_max_suppression(boxes, other=(confidence, masks), t=overlap_threshold)
-	print(len(boxes))
 
-	# if filter_empty_masks:
-	# 	boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
+	if filter_empty_masks:
+		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
 
-	# if filter_disjoint:
-	# 	masks = proc.remove_unconnected_components(masks)
+	if filter_disjoint:
+		masks = proc.remove_unconnected_components(masks)
 
 	# if recenter:
 	# 	boxes, altered = proc.recenter_boxes(boxes, masks, d=center_distance)			# indeces of moved boxes
@@ -126,8 +124,8 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	# 	if filter_empty_masks:
 	# 		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
 
-	contours  = proc.find_contours(boxes, masks[...,0])
-	centroids = proc.find_centroids(boxes, masks[...,0])
+	contours  = proc.find_contours(boxes, masks)
+	centroids = proc.find_centroids(boxes, masks)
 
 	if get_background:
 		background_boxes, background_confidence = proc.get_class(c_rects, predictions, 0)
@@ -177,7 +175,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 	"""Perform model on img_path by dividing it into blocks."""
 	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
 	print(valid_blocks.keys())
-	valid_blocks = {(10,21):valid_blocks[(10,21)], (10,22):valid_blocks[(10,22)]}#, (10,23):valid_blocks[(10,23)]}
+	valid_blocks = {(10,61):valid_blocks[(10,61)], (10,62):valid_blocks[(10,62)]}#, (10,23):valid_blocks[(10,23)]}
 
 	data_dict = dict()
 	if get_background:
@@ -200,13 +198,13 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 		# 	print('No crops found in block ({},{})'.format(i,j))
 		# 	continue
 
-		data_dict[(i,j)] = {'contours'  : contours, 
-							'centroids' : centroids, 
+		data_dict[(i,j)] = {'contours'  : contours,
+							'centroids' : centroids,
 							'block'		: (i_ad, j_ad, height, width),
 							'confidence': confidence,
 							'boxes'		: boxes}
 		if get_background:
-			background_dict[(i,j)] = {'background_boxes': background_boxes, 
+			background_dict[(i,j)] = {'background_boxes': background_boxes,
 									  'background_confidence':background_confidence,
 									  'block'		: (i_ad, j_ad, height, width)}
 
@@ -267,7 +265,7 @@ def process_overlap(data_dict, block_overlap):
 def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=np.infty, filter_edges=True, get_background=False):
 	"""Writes 3 shapefiles: CONTOURS.shp, BLOCK_LINES.shp, POINTS.shp, which respectively contain crop
 	contours, block shapes and crop centroids. Also writes a pickle file containing the output in dictionary form.
-	This dictionary also contains the dictionary with all parameters used in the simulation under the key 'metadata'. 
+	This dictionary also contains the dictionary with all parameters used in the simulation under the key 'metadata'.
 	The input tif is divided into overlapping blocks of size block_size+2*block_overlap.
 	Duplicates in the overlap region are removed using KDTrees. The parameter max_count is included for debug purposes;
 	the process is terminated after max_count blocks."""
@@ -345,4 +343,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=200, get_background=True)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=200)#, get_background=True)
