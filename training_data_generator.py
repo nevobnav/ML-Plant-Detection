@@ -6,6 +6,7 @@
 """
 
 import os
+import shutil
 import numpy as np 
 import matplotlib.pyplot as plt 
 import skimage
@@ -160,6 +161,20 @@ def generate_data(CONTOURS, POINTS, BG_DATA, img_path, dem_path, clp_path, box_s
 
 	print('{} images saved'.format(count))
 
+def merge_training_sets(path1, path2):
+	"""path1 and path2 should contain a number of class folders, which in turn contain the follwing folders:
+		- Training Data Color
+		- Training Data Height
+		- Training Data Mask """
+	src_color,  dst_color  = path1 + '/Training Data Color/',  path2 + '/Training Data Color/'
+	src_height, dst_height = path1 + '/Training Data Height/', path2 + '/Training Data Height/'
+	src_mask,   dst_mask   = path1 + '/Training Data Mask/',   path2 + '/Training Data Mask/'
+	for (src, dst) in [(src_color, dst_color), (src_height, dst_height), (src_mask, dst_mask)]:
+		for class_name in os.listdir(src):
+			for im_name in os.listdir(src+class_name):
+			    full_file_name = os.path.join(src+class_name, im_name)
+			    if os.path.isfile(full_file_name):
+			        shutil.move(full_file_name, dst+class_name)
 
 if __name__ == "__main__":
 	name = 'c01_verdonk-Wever oost-201907240707' # 'c01_verdonk-Wever oost-201907240707' #
@@ -171,4 +186,5 @@ if __name__ == "__main__":
 	input_centers  = r"../../Orthomosaics/"+name+GR*'-GR'+r'/Plant Count/POINTS.shp'
 	picklepath = r"../../Orthomosaics/"+name+GR*'-GR'+r'/Plant Count/BG_DATA.pickle'
 
-	generate_data(input_contours, input_centers, picklepath, img_path, dem_path, clp_path, 50, target_dir='./testing')
+	# generate_data(input_contours, input_centers, picklepath, img_path, dem_path, clp_path, 50, target_dir='./testing')
+	merge_training_sets('./testing', './testing2')
