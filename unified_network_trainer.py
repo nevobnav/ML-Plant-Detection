@@ -30,41 +30,38 @@ def save_separate(model, out_name):
 		f.write(json_string)
 	model.save_weights(out_name+'_weights.h5')
 
-def customloss(y_true, y_pred):
-	return K.categorical_crossentropy(y_true[0], y_pred[0]) + 0.0*K.mean(K.square(y_true[1]-y_pred[1]))
-
-def create_network(num_classes):
+def create_network_base(num_classes):
 	# Color image convolutional network
 	input_RGB = layers.Input(shape=(c_size[0], c_size[1], 3))
-	x1 = layers.Conv2D(32, (3,3), activation='relu', padding='same')(input_RGB)
-	x2 = layers.Conv2D(32, (3,3), activation='relu', padding='same')(x1)
-	x3 = layers.MaxPooling2D((2,2))(x2)
-	x4 = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x3)
-	c4 = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x4)
-	x5 = layers.MaxPooling2D((2,2))(c4)
-	x6 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x5)
-	x7 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x6)
-	c7 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x7)
-	x8 = layers.MaxPooling2D((2,2))(c7)
-	x = layers.Flatten()(x8)
+	x = layers.Conv2D(32, (3,3), activation='relu', padding='same')(input_RGB)
+	x = layers.Conv2D(32, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(x)
+	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x)
+	c4 = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(c4)
+	x = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	c7 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(c7)
+	x = layers.Flatten()(x)
 
 	# Height image convolutional network
 	input_H = layers.Input(shape=(h_size[0], h_size[1], 1))
-	y1 = layers.Conv2D(16, (3,3), activation='relu')(input_H)
-	y2 = layers.Conv2D(16, (3,3), activation='relu', padding='same')(y1)
-	y3 = layers.MaxPooling2D((2,2))(y2)
-	y4 = layers.Conv2D(32, (3,3), activation='relu', padding='same')(y3)
-	y5 = layers.Conv2D(32, (3,3), activation='relu', padding='same')(y4)
-	y6 = layers.MaxPooling2D((2,2))(y5)
-	y7 = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y6)
-	y8 = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y7)
-	y9 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y8)			#added
-	y = layers.Flatten()(y9)
+	y = layers.Conv2D(16, (3,3), activation='relu')(input_H)
+	y = layers.Conv2D(16, (3,3), activation='relu', padding='same')(y)
+	y = layers.MaxPooling2D((2,2))(y)
+	y = layers.Conv2D(32, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(32, (3,3), activation='relu', padding='same')(y)
+	y = layers.MaxPooling2D((2,2))(y)
+	y = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y)			#added
+	y = layers.Flatten()(y)
 
 	# Combine Color and Height networks into FC layers
 	combined = layers.concatenate([x, y])
-	z1 = layers.Dense(128, activation='relu')(combined)
-	z = layers.Dense(32,  activation='relu')(z1)
+	z = layers.Dense(128, activation='relu')(combined)
+	z = layers.Dense(32,  activation='relu')(z)
 	class_output = layers.Dense(num_classes, activation='softmax', name='class_output')(z)
 
 	# FCN Masking part
@@ -79,7 +76,65 @@ def create_network(num_classes):
 	loss_weights = {"class_output": 1.0, "mask_output": 0.5}
 	model.compile(optimizer='adam', loss=losses, loss_weights=loss_weights, metrics=['accuracy'])
 
-	# model.compile(optimizer='adam', loss=customloss, metrics=['accuracy'])
+	return model
+
+def create_network_v2(num_classes):
+	# Color image convolutional network
+	input_RGB = layers.Input(shape=(c_size[0], c_size[1], 3))
+	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(input_RGB)
+	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(x)
+	x = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	c4 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	c4 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(c4)
+	x = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	c7 = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(c7)
+	x = layers.Flatten()(x)
+
+	# Height image convolutional network
+	input_H = layers.Input(shape=(h_size[0], h_size[1], 1))
+	y = layers.Conv2D(32, (3,3), activation='relu')(input_H)
+	y = layers.Conv2D(32, (3,3), activation='relu', padding='same')(y)
+	y = layers.MaxPooling2D((2,2))(y)
+	y = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y)
+	y = layers.MaxPooling2D((2,2))(y)
+	y = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y)			#added
+	y = layers.Flatten()(y)
+
+	# Combine Color and Height networks into FC layers
+	combined = layers.concatenate([x, y])
+	z_top = layers.Dense(256, activation='relu')(combined)
+	z = layers.Dense(128,  activation='relu')(z_top)
+	z = layers.Dense(64,  activation='relu')(z)
+	z = layers.Dense(32,  activation='relu')(z)
+	class_output = layers.Dense(num_classes, activation='softmax', name='class_output')(z)
+
+	# FCN Masking part
+	# z16x16 = layers.Reshape((16,16,1))(z_top)
+	# zc = layers.Conv2D(filters=c7.get_shape().as_list()[-1], kernel_size=1)(z16x16)
+	f = layers.Conv2D(filters=1, kernel_size=1)(c7)
+	# f = layers.Add()([f, zc])
+	f = layers.Conv2DTranspose(filters=c4.get_shape().as_list()[-1], kernel_size=4, strides=(2,2), padding='same', name='fcn2')(f)
+	f = layers.Add()([f, c4])
+	# f = layers.Conv2D(filters=1, kernel_size=1)(f)
+	mask_output = layers.Conv2DTranspose(filters=1, kernel_size=4, strides=(2,2), padding='same', name='mask_output')(f)
+
+	model = keras.Model(inputs=[input_RGB, input_H], outputs=[class_output, mask_output])
+
+	losses = {"class_output": 'categorical_crossentropy', "mask_output":'mean_squared_error'}
+	loss_weights = {"class_output": 1.0, "mask_output": 0.5}
+
+	opt = keras.optimizers.Adam(learning_rate=0.0001)			# learning rate should be ~1e-4
+	model.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=['accuracy'])
 
 	return model
 
@@ -129,15 +184,17 @@ def show_prediction(model, RGB_tensor, H_tensor, class_names=None):
 	"""Testing function to show if output makes sense"""
 	labels, masks = model.predict([RGB_tensor, H_tensor])
 	for n in range(RGB_tensor.shape[0]):
-		f, (ax1, ax2, ax3) = plt.subplots(1,3)
+		f, axs = plt.subplots(2,2)
+		(ax1, ax2, ax3, ax4) = axs.flatten()
 		ax1.imshow(RGB_tensor[n,...])
 		ax2.imshow(H_tensor[n,:,:,0])
-		ax3.imshow(masks[n,:,:,0]>0.5)
+		ax3.imshow(masks[n,:,:,0], cmap='gray')
+		ax4.imshow(masks[n,:,:,0]>0.5, cmap='gray')
 		if class_names==None:
 			ax1.set_title(np.argmax(labels[n,:]))
 		else:
 			ax1.set_title(class_names[np.argmax(labels[n,:])])
-		for ax in (ax1, ax2, ax3):
+		for ax in (ax1, ax2, ax3, ax4):
 			ax.axis('off')
 	plt.show()
 
@@ -154,10 +211,16 @@ if __name__ == "__main__":
 	num_classes = len(os.listdir(master_dir+c_dir))
 	input_tensors, output_tensors = init_data_tensors(c_size, h_size, master_dir, c_dir, h_dir, mask_dir)
 
-	model = create_network(num_classes)
+	# model = create_network_base(num_classes)
+	model = create_network_v2(num_classes)
+
+	EPOCHS = 6
 	es = keras.callbacks.EarlyStopping(monitor='mask_output_acc', mode='max')
 	model.fit(input_tensors, {"mask_output":output_tensors[1], "class_output": output_tensors[0]}, \
-			  epochs=1, steps_per_epoch=input_tensors[0].shape[0], callbacks=[es])
+			  epochs=EPOCHS,
+			  steps_per_epoch=input_tensors[0].shape[0]//EPOCHS,
+			  callbacks=[es])
+
 	model.save('Unified CNNs/broccoli_unified_GPU.h5')
 	save_separate(model, 'Unified CNNs/broccoli_unified_GPU')
 

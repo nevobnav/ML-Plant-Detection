@@ -22,7 +22,7 @@ import tif_functions
 import settings
 
 #================================================= Crop Type =================================================
-params = settings.get_settings('broccoli', box_size=50, block_size=2000)
+params = settings.get_settings('broccoli', box_size=70, block_size=2000, sigma=3)
 for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
@@ -111,20 +111,20 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	boxes, [confidence] = proc.non_max_suppression(boxes, other=[confidence], t=overlap_threshold)
 	masks = proc.get_masks(boxes, c_im, mask_model, verbose=1)									# compute masks for each box
 
-	if filter_empty_masks:
-		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
-
-	if filter_disjoint:
-		masks = proc.remove_unconnected_components(masks)
-
-	if recenter:
-		boxes, altered = proc.recenter_boxes(boxes, masks, d=center_distance)			# indeces of moved boxes
-		new_masks = proc.get_masks(boxes[altered], c_im, mask_model, verbose=1)			# compute new masks of moved boxes
-		if filter_disjoint:
-			new_masks = proc.remove_unconnected_components(new_masks)
-		masks[altered] = new_masks																# set new masks
-		if filter_empty_masks:
-			boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
+	# if filter_empty_masks:
+	# 	boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
+	#
+	# if filter_disjoint:
+	# 	masks = proc.remove_unconnected_components(masks)
+	#
+	# if recenter:
+	# 	boxes, altered = proc.recenter_boxes(boxes, masks, d=center_distance)			# indeces of moved boxes
+	# 	new_masks = proc.get_masks(boxes[altered], c_im, mask_model, verbose=1)			# compute new masks of moved boxes
+	# 	if filter_disjoint:
+	# 		new_masks = proc.remove_unconnected_components(new_masks)
+	# 	masks[altered] = new_masks																# set new masks
+	# 	if filter_empty_masks:
+	# 		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
 
 	contours  = proc.find_contours(boxes, masks)
 	centroids = proc.find_centroids(boxes, masks)
@@ -189,7 +189,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 			continue
 
 		try:
-			print('Processing block ({},{})'.format(i,j))
+			print('Processing block ({},{}) at ({:.5f}, {:.5f})'.format(i,j, *transform*(i_ad,j_ad)))
 			if get_background:
 				contours, centroids, confidence, boxes, background_boxes, background_confidence\
 							 = run_on_block(c_im, h_im, padding=box_size, get_background=get_background)
@@ -299,6 +299,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 					(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
 
 					count = 0
+					at_field_edge = 0
 					for (k, cnt) in enumerate(contours):							# write contours
 						xs, ys = cnt[:,1] + j_ad, cnt[:,0] + i_ad
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
@@ -312,10 +313,12 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 							            		  'geometry': mapping(transformed_points)})
 								count += 1
 							else:
-								print('Crop ({},{}):{} intersects field edge'.format(i,j,k))
+								# print('Crop ({},{}):{} intersects field edge'.format(i,j,k))
+								at_field_edge += 1
 						except:
-							print('Contour ({},{}):{} invalid'.format(i,j,k))
+							print('Contour ({},{}):{} invalid due to invalid geometry. Result of faulty mask output.'.format(i,j,k))
 					print('{} crops written to block ({},{})'.format(count,i,j))
+					print('{} crops intersect field edge'.format(at_field_edge))
 
 					block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
 					transformed_vertices = [transform*(a,b) for (b,a) in block_vertices]

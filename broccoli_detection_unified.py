@@ -22,7 +22,7 @@ import tif_functions
 import settings
 
 #================================================= Crop Type =================================================
-params = settings.get_settings('broccoli_unified', box_size=50, block_size=500)
+params = settings.get_settings('broccoli_unified', box_size=50, block_size=2000)
 for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
@@ -174,8 +174,8 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_background=False):
 	"""Perform model on img_path by dividing it into blocks."""
 	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
-	print(valid_blocks.keys())
-	valid_blocks = {(10,61):valid_blocks[(10,61)], (10,62):valid_blocks[(10,62)]}#, (10,23):valid_blocks[(10,23)]}
+	# print(valid_blocks.keys())
+	# valid_blocks = {(10,61):valid_blocks[(10,61)], (10,62):valid_blocks[(10,62)]}#, (10,23):valid_blocks[(10,23)]}
 
 	data_dict = dict()
 	if get_background:
@@ -187,16 +187,16 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 		if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
 			continue
 
-		# try:
+		try:
 			# print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
-		if get_background:
-			contours, centroids, confidence, boxes, background_boxes, background_confidence\
-						 = run_on_block(c_im, h_im, padding=box_size, get_background=get_background)
-		else:
-			contours, centroids, confidence, boxes = run_on_block(c_im, h_im, padding=box_size)
-		# except:
-		# 	print('No crops found in block ({},{})'.format(i,j))
-		# 	continue
+			if get_background:
+				contours, centroids, confidence, boxes, background_boxes, background_confidence\
+							 = run_on_block(c_im, h_im, padding=box_size, get_background=get_background)
+			else:
+				contours, centroids, confidence, boxes = run_on_block(c_im, h_im, padding=box_size)
+		except:
+			print('No crops found in block ({},{})'.format(i,j))
+			continue
 
 		data_dict[(i,j)] = {'contours'  : contours,
 							'centroids' : centroids,
@@ -343,4 +343,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=200)#, get_background=True)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=10)#, get_background=True)
