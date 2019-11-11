@@ -129,7 +129,7 @@ if __name__ == "__main__":
 
 	input_tensors, output_tensors = init_data_tensors(c_size, h_size, master_dir, c_dir, h_dir, mask_dir)
 
-	model.fit(input_tensors, output_tensors, epochs=1, steps_per_epoch=100)
+	model.fit(input_tensors, output_tensors, epochs=1, steps_per_epoch=20)
 	model.save('Unified CNNs/broccoli_unified.h5')
 
 	idxs = [0, 1, 2, 3, 4]
