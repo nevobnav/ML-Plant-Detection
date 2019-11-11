@@ -22,7 +22,7 @@ import tif_functions
 import settings
 
 #================================================= Crop Type =================================================
-params = settings.get_settings('broccoli', box_size=50, block_size=700)
+params = settings.get_settings('broccoli', box_size=70, block_size=2000, sigma=3)
 for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
@@ -35,9 +35,9 @@ if platform == 'linux':
 	dem_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
 	clp_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
 elif platform == 'windows':
-	img_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907170749-GR.tif"
-	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907170749_DEM-GR.tif"
-	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\c01_verdonk-Wever west-201907170749-GR_FIELD.shp"
+	img_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724-GR.tif"
+	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724_DEM-GR.tif"
+	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\Plant Counts October\\PLANT COUNT - c01_verdonk-Wever west-201907240724-GR\\Weird_Bands.shp"
 
 dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_adj_window	 = dem_functions['get_adjusted_window']
@@ -108,23 +108,23 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	predictions = box_model.predict([c_crops, h_crops], verbose=1)								# run classification model
 	idxs = proc.get_class_idxs(predictions, 1)
 	boxes, confidence = c_rects[idxs], predictions[idxs]
-	boxes, confidence = proc.non_max_suppression(boxes, other=[confidence], t=overlap_threshold)
+	boxes, [confidence] = proc.non_max_suppression(boxes, other=[confidence], t=overlap_threshold)
 	masks = proc.get_masks(boxes, c_im, mask_model, verbose=1)									# compute masks for each box
 
-	if filter_empty_masks:
-		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
-
-	if filter_disjoint:
-		masks = proc.remove_unconnected_components(masks)
-
-	if recenter:
-		boxes, altered = proc.recenter_boxes(boxes, masks, d=center_distance)			# indeces of moved boxes
-		new_masks = proc.get_masks(boxes[altered], c_im, mask_model, verbose=1)			# compute new masks of moved boxes
-		if filter_disjoint:
-			new_masks = proc.remove_unconnected_components(new_masks)
-		masks[altered] = new_masks																# set new masks
-		if filter_empty_masks:
-			boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
+	# if filter_empty_masks:
+	# 	boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
+	#
+	# if filter_disjoint:
+	# 	masks = proc.remove_unconnected_components(masks)
+	#
+	# if recenter:
+	# 	boxes, altered = proc.recenter_boxes(boxes, masks, d=center_distance)			# indeces of moved boxes
+	# 	new_masks = proc.get_masks(boxes[altered], c_im, mask_model, verbose=1)			# compute new masks of moved boxes
+	# 	if filter_disjoint:
+	# 		new_masks = proc.remove_unconnected_components(new_masks)
+	# 	masks[altered] = new_masks																# set new masks
+	# 	if filter_empty_masks:
+	# 		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
 
 	contours  = proc.find_contours(boxes, masks)
 	centroids = proc.find_centroids(boxes, masks)
@@ -176,7 +176,7 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_background=False):
 	"""Perform model on img_path by dividing it into blocks."""
 	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
-	# valid_blocks = {(10,10):valid_blocks[(10,10)], (10,11):valid_blocks[(10,11)], (10,12):valid_blocks[(10,12)], (10,13):valid_blocks[(10,13)]}
+	# valid_blocks = {(17,15):valid_blocks[(17,15)], (17,14):valid_blocks[(17,14)]}#, (10,12):valid_blocks[(10,12)], (10,13):valid_blocks[(10,13)]}
 
 	data_dict = dict()
 	if get_background:
@@ -189,7 +189,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 			continue
 
 		try:
-			print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
+			print('Processing block ({},{}) at ({:.5f}, {:.5f})'.format(i,j, *transform*(i_ad,j_ad)))
 			if get_background:
 				contours, centroids, confidence, boxes, background_boxes, background_confidence\
 							 = run_on_block(c_im, h_im, padding=box_size, get_background=get_background)
@@ -295,11 +295,11 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 				for (i,j) in data_dict:
 					contours  = data_dict[(i,j)]['contours']
 					centroids = data_dict[(i,j)]['centroids']
-					probs 	  = data_dict[(i,j)]['confidence'][0,...]
-					print(probs.shape)
+					probs = data_dict[(i,j)]['confidence']
 					(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
 
 					count = 0
+					at_field_edge = 0
 					for (k, cnt) in enumerate(contours):							# write contours
 						xs, ys = cnt[:,1] + j_ad, cnt[:,0] + i_ad
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
@@ -313,10 +313,12 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 							            		  'geometry': mapping(transformed_points)})
 								count += 1
 							else:
-								print('Crop ({},{}):{} intersects field edge'.format(i,j,k))
+								# print('Crop ({},{}):{} intersects field edge'.format(i,j,k))
+								at_field_edge += 1
 						except:
-							print('Contour ({},{}):{} invalid'.format(i,j,k))
+							print('Contour ({},{}):{} invalid due to invalid geometry. Result of faulty mask output.'.format(i,j,k))
 					print('{} crops written to block ({},{})'.format(count,i,j))
+					print('{} crops intersect field edge'.format(at_field_edge))
 
 					block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
 					transformed_vertices = [transform*(a,b) for (b,a) in block_vertices]
@@ -345,4 +347,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=9, get_background=True)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, get_background=True)
