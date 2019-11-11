@@ -129,7 +129,7 @@ def non_max_suppression(boxes, other=(), t=0.2):
 		overlap = (w * h) / area[idxs[:last]]
 		idxs = np.delete(idxs, np.concatenate(([last], np.where(overlap > t)[0])))		# delete last b/c we checked it, and delete all indeces for which the overlap is large
 	if len(other) > 0:
-		return boxes[pick], (o[pick] for o in other)					# list as index only works with numpy arrays
+		return boxes[pick], [o[pick] for o in other]					# list as index only works with numpy arrays
 	else:
 		return boxes[pick]
 
@@ -156,7 +156,6 @@ def discard_empty(rects, prob, masks, t=0.01):
 	box that should be filled as a fraction of the total area."""
 	crop_areas = np.sum(np.sum(masks, axis=2), axis=1)#[:,0]
 	is_almost_empty = crop_areas < t*rects[:,2]*rects[:,3]
-	print(crop_areas.shape, is_almost_empty.shape)
 	filtered_rects = np.array([elt for (i,elt) in enumerate(rects) if not is_almost_empty[i]])
 	filtered_prob  = np.array([elt for (i,elt) in enumerate(prob)  if not is_almost_empty[i]])
 	filtered_masks = np.array([elt for (i,elt) in enumerate(masks) if not is_almost_empty[i]])
@@ -188,7 +187,7 @@ def remove_unconnected_components(masks):
 	for (i,mask) in enumerate(masks):
 		labelled_mask, num_components = measurements.label(mask)
 		areas = []
-		if num_components >= 1:
+		if num_components > 1:
 			for k in range(1, num_components+1):
 				area = (labelled_mask==k).sum()
 				areas.append(area)
