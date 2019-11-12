@@ -111,20 +111,20 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	boxes, [confidence] = proc.non_max_suppression(boxes, other=[confidence], t=overlap_threshold)
 	masks = proc.get_masks(boxes, c_im, mask_model, verbose=1)									# compute masks for each box
 
-	# if filter_empty_masks:
-	# 	boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
-	#
-	# if filter_disjoint:
-	# 	masks = proc.remove_unconnected_components(masks)
-	#
-	# if recenter:
-	# 	boxes, altered = proc.recenter_boxes(boxes, masks, d=center_distance)			# indeces of moved boxes
-	# 	new_masks = proc.get_masks(boxes[altered], c_im, mask_model, verbose=1)			# compute new masks of moved boxes
-	# 	if filter_disjoint:
-	# 		new_masks = proc.remove_unconnected_components(new_masks)
-	# 	masks[altered] = new_masks																# set new masks
-	# 	if filter_empty_masks:
-	# 		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
+	if filter_empty_masks:
+		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
+	
+	if filter_disjoint:
+		masks = proc.remove_unconnected_components(masks)
+	
+	if recenter:
+		boxes, altered = proc.recenter_boxes(boxes, masks, d=center_distance)			# indeces of moved boxes
+		new_masks = proc.get_masks(boxes[altered], c_im, mask_model, verbose=1)			# compute new masks of moved boxes
+		if filter_disjoint:
+			new_masks = proc.remove_unconnected_components(new_masks)
+		masks[altered] = new_masks																# set new masks
+		if filter_empty_masks:
+			boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
 
 	contours  = proc.find_contours(boxes, masks)
 	centroids = proc.find_centroids(boxes, masks)
