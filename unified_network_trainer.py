@@ -276,8 +276,8 @@ def compile_model(model, learning_rate=1e-4, mask_loss_weight=0.5):
 	"""Compile model with adam optimizer with alpha=learning_rate. The parameter
 	mask_loss_weight determines how 'important' the mask_output_loss is compared to the
 	class_output_loss, with 1 denoting a 50/50 split."""
-	losses = {"class_output": 'categorical_crossentropy', "mask_output":'mae'}
-	# losses = {"class_output": 'categorical_crossentropy', "mask_output":'mean_squared_error'}
+	# losses = {"class_output": 'categorical_crossentropy', "mask_output":'mse'}
+	losses = {"class_output": 'categorical_crossentropy', "mask_output":'mean_squared_error'}
 	loss_weights = {"class_output": 1.0, "mask_output": mask_loss_weight}
 	metrics = {'class_output':'accuracy', 'mask_output':'binary_accuracy'}
 	opt = keras.optimizers.Adam(learning_rate=learning_rate)
@@ -356,8 +356,8 @@ if __name__ == "__main__":
 
 	compile_model(model, mask_loss_weight=0.75)
 
-	model.fit_generator(gen, epochs=2, steps_per_epoch=20)
-	model.save('Unified CNNs/broccoli_unified_v4.h5')
-	save_separate(model, 'Unified CNNs/broccoli_unified_v4')
+	# model.fit_generator(gen, epochs=3, steps_per_epoch=20)
+	# model.save('Unified CNNs/broccoli_unified_v4.h5')
+	# save_separate(model, 'Unified CNNs/broccoli_unified_v4')
 
-	show_predictions(5, gen, model)
+	# show_predictions(5, gen, model)

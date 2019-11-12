@@ -207,6 +207,7 @@ def find_contours(rects, masks):
 			rel_cnt[:,1] = rel_cnt[:,1]*h/mask.shape[0]
 		except IndexError:
 			rel_cnt = np.array([[0,0],[0,w],[h,w],[h,0]])
+			masks[i,...] = 0
 		rel_cnt[:,0] += y
 		rel_cnt[:,1] += x
 		contours.append(rel_cnt)

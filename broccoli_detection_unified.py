@@ -1,5 +1,5 @@
 #!/usr/bin/python3.6
-platform = 'windows'
+platform = 'linux'
 
 #================================================== Imports ==================================================
 import os
@@ -112,8 +112,8 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	if filter_empty_masks:
 		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
 
-	if filter_disjoint:
-		masks = proc.remove_unconnected_components(masks)
+	# if filter_disjoint:
+	# 	masks = proc.remove_unconnected_components(masks)
 
 	# if recenter:
 	# 	boxes, altered = proc.recenter_boxes(boxes, masks, d=center_distance)			# indeces of moved boxes
