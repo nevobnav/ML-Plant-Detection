@@ -42,32 +42,6 @@ def dark_hotspots(im, sigma=6, padding=0, m=2):
 	return coords+padding
 
 # =========================================== Box filters ===============================================
-def sort_into_classes(rects, predictions, weeds=False):
-	"""Sort bounding boxes into the class broccoli, background (."""
-	num_candidates = predictions.shape[0]
-	back_box_indeces, broc_box_indeces, weed_box_indeces = [], [], []
-	back_rects, broc_rects, = [], []
-	back_prob,  broc_prob,  = [], []
-	if weeds:
-		weed_rects, weed_prob = [], []
-
-	for i in range(num_candidates):
-		pred_index = np.argmax(predictions[i,:])		# prediction index corresponds to label name
-		if pred_index == 0:								# background
-			back_box_indeces.append(i)					# store index belonging to predicted broccoli
-			back_rects.append(rects[i,:])
-			back_prob.append(predictions[i,pred_index])
-		elif pred_index == 1:							# broccoli
-			broc_box_indeces.append(i)					# store index belonging to predicted broccoli
-			broc_rects.append(rects[i,:])
-			broc_prob.append(predictions[i,pred_index])
-		elif pred_index == 2 and weeds:							# weed
-			weed_box_indeces.append(i)					# store index belonging to predicted weed
-			weed_rects.append(rects[i,:])
-			weed_prob.append(predictions[i,pred_index])
-
-	return np.array(broc_rects), np.array(broc_prob)
-
 def multi_class_sort(rects, predictions, bg_index=0):
 	"""Sorts each box in rects into its class as predicted by the array predictions. Returns a tuple of the
 	form ((rects_i, probs_i), ...), where probs contains the probability of the corresponding box belonging to class i."""
