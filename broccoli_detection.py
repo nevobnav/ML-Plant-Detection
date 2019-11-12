@@ -106,13 +106,12 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
 
 	predictions = box_model.predict([c_crops, h_crops], verbose=1)								# run classification model
-	idxs = proc.get_class_idxs(predictions, 1)
-	boxes, confidence = c_rects[idxs], predictions[idxs]
+	boxes, confidence = proc.get_class(c_rects, predictions, 1)
 	boxes, [confidence] = proc.non_max_suppression(boxes, other=[confidence], t=overlap_threshold)
 	masks = proc.get_masks(boxes, c_im, mask_model, verbose=1)									# compute masks for each box
 
 	if filter_empty_masks:
-		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
+		masks, [boxes, confidence] = proc.discard_empty(masks, other=[boxes, confidence], t=crop_size_threshold)
 
 	if filter_disjoint:
 		masks = proc.remove_unconnected_components(masks)

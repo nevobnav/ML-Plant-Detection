@@ -79,7 +79,7 @@ def get_class(rects, predictions, class_index):
 
 	return np.array(boxes), np.array(probs)
 
-def non_max_suppression(boxes, other=(), t=0.2):
+def non_max_suppression(boxes, other=[], t=0.2):
 	"""Non-Max-Suppresion algorithm. boxes is an (N,4)-numpy array, where N is the number of boxes.
 	One row of the array boxes should be of the form [x, y, w, h], where (x,y) is the lower left
 	edge of the box, w its width and h its height."""
@@ -125,15 +125,18 @@ def get_masks(rects, c_im, model, verbose=1):
 		masks[i,...] = cv2.resize(predictions[i,...].astype(np.uint8), (w,h))
 	return masks
 
-def discard_empty(rects, prob, masks, t=0.01):
+def discard_empty(masks, other=[], t=0.01):
 	"""Discards rectangles which are nearly empty. The parameter t determines the minimum amount of the
 	box that should be filled as a fraction of the total area."""
 	crop_areas = np.sum(np.sum(masks, axis=2), axis=1)#[:,0]
 	is_almost_empty = crop_areas < t*rects[:,2]*rects[:,3]
-	filtered_rects = np.array([elt for (i,elt) in enumerate(rects) if not is_almost_empty[i]])
-	filtered_prob  = np.array([elt for (i,elt) in enumerate(prob)  if not is_almost_empty[i]])
 	filtered_masks = np.array([elt for (i,elt) in enumerate(masks) if not is_almost_empty[i]])
-	return filtered_rects, filtered_prob, filtered_masks
+	for (idx, o) in enumerate(other):
+		other[idx] = np.array([elt for (i,elt) in enumerate(o) if not is_almost_empty[i]])
+	if len(other) > 0:
+		return filtered_masks, other
+	else:
+		return filtered_masks
 
 def recenter_boxes(rects, masks, d=0.1):
 	"""If the (relative) distance from box center to mask centroid is greater than d, move box such that centroid

@@ -107,22 +107,13 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	masks = masks[...,0]
 	crop_idxs = proc.get_class_idxs(predictions, 1)
 	boxes, confidence, masks = c_rects[crop_idxs], predictions[crop_idxs], masks[crop_idxs]
-	boxes, (confidence, masks) = proc.non_max_suppression(boxes, other=(confidence, masks), t=overlap_threshold)
+	boxes, (confidence, masks) = proc.non_max_suppression(boxes, other=[confidence, masks], t=overlap_threshold)
 
 	if filter_empty_masks:
-		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
+		masks, [boxes, confidence] = proc.discard_empty(masks, other=[boxes, confidence], t=crop_size_threshold)
 
-	# if filter_disjoint:
-	# 	masks = proc.remove_unconnected_components(masks)
-
-	# if recenter:
-	# 	boxes, altered = proc.recenter_boxes(boxes, masks, d=center_distance)			# indeces of moved boxes
-	# 	new_masks = proc.get_masks(boxes[altered], c_im, mask_model, verbose=1)			# compute new masks of moved boxes
-	# 	if filter_disjoint:
-	# 		new_masks = proc.remove_unconnected_components(new_masks)
-	# 	masks[altered] = new_masks																# set new masks
-	# 	if filter_empty_masks:
-	# 		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
+	if filter_disjoint:
+		masks = proc.remove_unconnected_components(masks)
 
 	contours, idxs = proc.find_contours(boxes, masks)
 	boxes, confidence, masks = boxes[idxs], confidence[idxs], masks[idxs]
@@ -306,12 +297,12 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
 						transformed_points   = Polygon([transform*(xs[l],ys[l]) for l in range(len(xs))])
 						transformed_centroid = Point(transform*centroid)
-						output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
-						            	  'geometry': mapping(transformed_centroid)})
 						try:
 							if transformed_points.difference(field).is_empty or not filter_edges:			# if contour is complete enclosed in field
 								output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
 							            		  'geometry': mapping(transformed_points)})
+								output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
+						            	  'geometry': mapping(transformed_centroid)})
 								count += 1
 							else:
 								print('Crop ({},{}):{} intersects field edge'.format(i,j,k))
