@@ -19,8 +19,8 @@ class BroccoliSettings(object):
 		filter_disjoint = True
 		c_box = (60, 60)
 		h_box = (20, 20)
-		box_model_name  = 'Detection CNNs/CROP7+SAHN4_t5.h5'					# Broccoli, use t5
-		mask_model_name = 'Masking CNNs/broccoli_masker_500.h5'							# use masker_500
+		box_model_name  = 'Detection CNNs/CROP7+SAHN4_t5.h5'
+		mask_model_name = 'Masking CNNs/broccoli_masker_500.h5'
 		block_size = 500
 		block_overlap = int(1.5*box_size)
 
@@ -47,7 +47,7 @@ class BroccoliSettings(object):
 class BroccoliUnifiedSettings(object):
 	def __init__(self, **kwargs):
 		overlap_threshold 	= 0.4					# for broccoli, use 0.4, for lettuce, use 0.7
-		crop_size_threshold = 0.05					# 0.0 - 0.1, percentage of bounding box that should be filled with crop
+		crop_size_threshold = 0.1					# 0.0 - 0.1, percentage of bounding box that should be filled with crop
 		center_distance 	= 0.05					# 0.0 - 0.5, relative distance a mask centroid can be from box center before the box is recentered.
 		overlap_distance    = 25					# minimum distance in pixels between two centroids
 		box_size = 55								# For broccoli, use 55-60, for lettuce, use 45-50. Must be even if >64
@@ -56,8 +56,8 @@ class BroccoliUnifiedSettings(object):
 		recenter 		= True
 		filter_disjoint = True
 		c_box = (64, 64)
-		h_box = (20, 20)
-		model_name = 'Unified CNNs/broccoli_unified.h5'
+		h_box = (16, 16)
+		model_name = 'Unified CNNs/broccoli_unified_v4_121119_mae.h5'
 		block_size = 500
 		block_overlap = int(1.5*box_size)
 

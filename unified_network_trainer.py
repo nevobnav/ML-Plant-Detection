@@ -16,7 +16,7 @@ import cv2
 
 batch_size = 32
 
-#======================================== Loading/Saving Model ======================================== 
+#======================================== Loading/Saving Model ========================================
 def load_separate(path):
 	with open(path+'.json', 'r') as f:
 		json_string = f.read()
@@ -30,7 +30,7 @@ def save_separate(model, out_name):
 		f.write(json_string)
 	model.save_weights(out_name+'_weights.h5')
 
-#======================================= Custom Loss functions ======================================== 
+#======================================= Custom Loss functions ========================================
 def jaccard_loss(y_true, y_pred, smooth=100):
     """Jaccard/IoU loss function."""
     intersection = K.sum(K.abs(y_true * y_pred), axis=-1)
@@ -38,7 +38,7 @@ def jaccard_loss(y_true, y_pred, smooth=100):
     jac = (intersection + smooth) / (sum_ - intersection + smooth)
     return (1 - jac) * smooth
 
-#======================================== Model Architectures ========================================= 
+#======================================== Model Architectures =========================================
 def create_network_base(num_classes=2):
 	c_size = (64,64)
 	h_size = (20,20)
@@ -146,7 +146,7 @@ def create_network_v2(num_classes=2):
 
 def create_network_v3(num_classes=2):
 	"""
-	Differences compared to v2: 
+	Differences compared to v2:
 		- Added another Conv layer in RGB part that is connected to FCN
 	"""
 	c_size = (64,64)
@@ -207,7 +207,7 @@ def create_network_v3(num_classes=2):
 
 def create_network_v4(num_classes=2):
 	"""
-	Differences compared to v3: 
+	Differences compared to v3:
 		- Reduced Height input size from (20,20) to (16,16) to make it compatible with mask network.
 		- Increased height network and added its output to masking step.
 	"""
@@ -305,19 +305,19 @@ def init_data_generator(data_path, model):
 	gen_object = prep.image.ImageDataGenerator()
 
 	def Multi_Input_Output_Flow(generator, dir_c, dir_h, dir_m, seed=0):
-		gen_color  = generator.flow_from_directory(dir_c, target_size=c_size, class_mode='categorical', 
+		gen_color  = generator.flow_from_directory(dir_c, target_size=c_size, class_mode='categorical',
 			batch_size=batch_size, shuffle=True, seed=seed, color_mode='rgb')
-		gen_height = generator.flow_from_directory(dir_h, target_size=h_size, class_mode='categorical', 
+		gen_height = generator.flow_from_directory(dir_h, target_size=h_size, class_mode='categorical',
 			batch_size=batch_size, shuffle=True, seed=seed, color_mode='grayscale')
-		gen_mask   = generator.flow_from_directory(dir_m, target_size=c_size, class_mode='categorical', 
+		gen_mask   = generator.flow_from_directory(dir_m, target_size=c_size, class_mode='categorical',
 			batch_size=batch_size, shuffle=True, seed=seed, color_mode='grayscale')
 		while True:
 			im_color  = gen_color.next()
 			im_height = gen_height.next()
 			im_mask   = gen_mask.next()
 			yield [im_color[0], im_height[0]], [im_color[1], im_mask[0]]  				# [RGB, Height], [label, Mask]
-			    
-	return Multi_Input_Output_Flow(gen_object, data_path+dir_color, data_path+dir_height, data_path+dir_mask)       
+
+	return Multi_Input_Output_Flow(gen_object, data_path+dir_color, data_path+dir_height, data_path+dir_mask)
 
 #========================================= Visualize Result ===========================================
 def show_predictions(k, gen, model, class_names=['Background', 'Broccoli']):

@@ -35,9 +35,9 @@ if platform == 'linux':
 	dem_path = r"/home/duncan/Documents/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
 	clp_path = r"/home/duncan/Documents/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
 elif platform == 'windows':
-	img_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859-GR.tif"
-	dem_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 1-201907230859_DEM-GR.tif"
-	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\c01_verdonk-Rijweg stalling 1-201907230859-GR_FIELD.shp"
+	img_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907170749-GR.tif"
+	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907170749_DEM-GR.tif"
+	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\c01_verdonk-Wever west-201907170749-GR_FIELD.shp"
 
 dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_adj_window	 = dem_functions['get_adjusted_window']
@@ -124,8 +124,11 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	# 	if filter_empty_masks:
 	# 		boxes, confidence, masks = proc.discard_empty(boxes, confidence, masks, t=crop_size_threshold)
 
-	contours  = proc.find_contours(boxes, masks)
+	contours, idxs = proc.find_contours(boxes, masks)
+	boxes, confidence, masks = boxes[idxs], confidence[idxs], masks[idxs]
 	centroids = proc.find_centroids(boxes, masks)
+	centroids, contours, idxs = proc.remove_shifted_centroids(centroids, contours)
+	boxes, confidence = boxes[idxs], confidence[idxs]
 
 	if get_background:
 		background_boxes, background_confidence = proc.get_class(c_rects, predictions, 0)
@@ -174,8 +177,8 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_background=False):
 	"""Perform model on img_path by dividing it into blocks."""
 	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
-	# print(valid_blocks.keys())
-	# valid_blocks = {(10,61):valid_blocks[(10,61)], (10,62):valid_blocks[(10,62)]}#, (10,23):valid_blocks[(10,23)]}
+	print(valid_blocks.keys())
+	# valid_blocks = {(1,4):valid_blocks[(1,4)], (1,5):valid_blocks[(1,5)]}#, (10,23):valid_blocks[(10,23)]}
 
 	data_dict = dict()
 	if get_background:
@@ -188,7 +191,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 			continue
 
 		try:
-			# print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
+	# print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
 			if get_background:
 				contours, centroids, confidence, boxes, background_boxes, background_confidence\
 							 = run_on_block(c_im, h_im, padding=box_size, get_background=get_background)
@@ -343,4 +346,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, max_count=10)#, get_background=True)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, get_background=True)#, max_count=10)#, get_background=True)

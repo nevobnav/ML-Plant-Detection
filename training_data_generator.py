@@ -159,11 +159,13 @@ def generate_data(CONTOURS, POINTS, BG_DATA, img_path, dem_path, clp_path, box_s
 
 		count += 1
 		if count >= max_count:
-			print('{} crop images saved'.format(count))
 			break
 
 	with open(BG_DATA, 'rb') as p:
 		data_dict = pickle.load(p)
+
+	print('saved {} images of class "{}"'.format(count, crop_name))
+
 
 	crop_name = 'Background'
 	dir_color  = target_dir+'/Training Data Color/'+crop_name+'/'
@@ -173,7 +175,6 @@ def generate_data(CONTOURS, POINTS, BG_DATA, img_path, dem_path, clp_path, box_s
 		if not os.path.exists(direc):
 			os.makedirs(direc)
 
-	print('{} crop images saved'.format(count))
 	max_count = int(bg_factor*count)
 	count = 0
 
@@ -192,10 +193,10 @@ def generate_data(CONTOURS, POINTS, BG_DATA, img_path, dem_path, clp_path, box_s
 
 				count += 1
 				if count >= max_count:
-					print('{} bg images saved'.format(count))
+					# print('{} bg images saved'.format(count))
 					return count
 
-	print('{} images saved'.format(count))
+	print('saved {} images of class "{}"'.format(count, 'Background'))
 
 def merge_training_sets(path1, path2):
 	"""path1 and path2 should contain a number of class folders, which in turn contain the follwing folders:
@@ -222,13 +223,14 @@ if __name__ == "__main__":
 	# input_centers  = r"../../Orthomosaics/"+name+GR*'-GR'+r'/Plant Count/POINTS.shp'
 	# picklepath = r"../../Orthomosaics/"+name+GR*'-GR'+r'/Plant Count/BG_DATA.pickle'
 
-	name = "c01_verdonk-Wever oost-201907240707-GR"
-	img_path = r"D:\\Old GR\\"+name+".tif"
-	dem_path = r"D:\\Old GR\\c01_verdonk-Wever oost-201907240707_DEM-GR.tif"
-	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\"+name+r"_FIELD.shp"
-	input_contours = r"..\\Plant Counts October\\PLANT COUNT - "+name+r"\\CONTOURS.shp"
-	input_centers  = r"..\\Plant Counts October\\PLANT COUNT - "+name+r"\\POINTS.shp"
-	picklepath     = r"..\\Plant Counts October\\PLANT COUNT - "+name+r"\\BG_DATA.pickle"
+	name = "c01_verdonk-Rijweg stalling 2-201907170908-GR"
+	img_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 2-201907170908-GR.tif"
+	dem_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 2-201907170908_DEM-GR.tif"
+	clp_path = r".\\Field Shapefiles\\c01_verdonk-Rijweg stalling 2-201907170908-GR_FIELD.shp"
+	input_contours = r"..\\PLANT COUNT - "+name+r"\\CONTOURS.shp"
+	input_centers  = r"..\\PLANT COUNT - "+name+r"\\POINTS.shp"
+	picklepath     = r"..\\PLANT COUNT - "+name+r"\\BG_DATA.pickle"
 
-	# generate_data(input_contours, input_centers, picklepath, img_path, dem_path, clp_path, 50, bg_factor=0.4, target_dir='./testing', max_count=1000)
-	# generate_background_data(picklepath, img_path, dem_path, clp_path, 50, target_dir='./testing', max_count=1000)
+	target = r"..\\GeneratedTrainingData"
+	generate_data(input_contours, input_centers, picklepath, img_path, dem_path, clp_path, 50, bg_factor=1, target_dir=target, max_count=1000)
+	# generate_background_data(picklepath, img_path, dem_path, clp_path, 50, target_dir=target, max_count=1000)
