@@ -204,7 +204,7 @@ if __name__ == "__main__":
 	# h_dir 	 = 'Training Data Height/'
 	# mask_dir = 'Training Data Mask/'
 
-	master_dir = r'.\\testing\\'
+	master_dir = r'..\\GeneratedTrainingData\\'
 	c_dir  	 = r'Training Data Color\\'
 	h_dir 	 = r'Training Data Height\\'
 	mask_dir = r'Training Data Mask\\'
@@ -214,16 +214,19 @@ if __name__ == "__main__":
 	# model = create_network_base(num_classes)
 	model = create_network_v2(num_classes)
 
-	EPOCHS = 6
+	BATCH_SIZE = 200
+	EPOCHS = input_tensors[0].shape[0]//BATCH_SIZE
+
 	es = keras.callbacks.EarlyStopping(monitor='mask_output_acc', mode='max')
 	model.fit(input_tensors, {"mask_output":output_tensors[1], "class_output": output_tensors[0]}, \
 			  epochs=EPOCHS,
-			  steps_per_epoch=input_tensors[0].shape[0]//EPOCHS,
+			  steps_per_epoch=BATCH_SIZE,
 			  callbacks=[es])
 
-	model.save('Unified CNNs/broccoli_unified_GPU.h5')
-	save_separate(model, 'Unified CNNs/broccoli_unified_GPU')
+	model_name = 'broccoli_unified_upgraded'
+	model.save('Unified CNNs/'+model_name+'.h5')
+	save_separate(model, 'Unified CNNs/'+model_name)
 
-	model = windows_load('Unified CNNs/broccoli_unified_GPU')
+	model = windows_load('Unified CNNs/'+model_name)
 	idxs = [0, 1, 2, 3, 4]
 	show_prediction(model, input_tensors[0][idxs,...], input_tensors[1][idxs,...])
