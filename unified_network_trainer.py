@@ -3,8 +3,9 @@
 from tensorflow import keras
 import tensorflow.keras.layers as layers
 import tensorflow.keras.models as models
+import tensorflow.keras.preprocessing as prep
 from tensorflow.keras.losses import mean_squared_error, categorical_crossentropy
-import keras.backend as K
+import tensorflow.keras.backend as K
 
 import os
 import numpy as np
@@ -13,11 +14,10 @@ from PIL import Image
 import cv2
 # import json
 
-c_size = (64, 64)
-h_size = (20, 20)
+batch_size = 32
 
-def windows_load(path):
-	# name = path.split(r'\\')[-1].split('.')[0]
+#======================================== Loading/Saving Model ======================================== 
+def load_separate(path):
 	with open(path+'.json', 'r') as f:
 		json_string = f.read()
 	new_model = models.model_from_json(json_string)
@@ -30,7 +30,19 @@ def save_separate(model, out_name):
 		f.write(json_string)
 	model.save_weights(out_name+'_weights.h5')
 
-def create_network_base(num_classes):
+#======================================= Custom Loss functions ======================================== 
+def jaccard_loss(y_true, y_pred, smooth=100):
+    """Jaccard/IoU loss function."""
+    intersection = K.sum(K.abs(y_true * y_pred), axis=-1)
+    sum_ = K.sum(K.abs(y_true) + K.abs(y_pred), axis=-1)
+    jac = (intersection + smooth) / (sum_ - intersection + smooth)
+    return (1 - jac) * smooth
+
+#======================================== Model Architectures ========================================= 
+def create_network_base(num_classes=2):
+	c_size = (64,64)
+	h_size = (20,20)
+
 	# Color image convolutional network
 	input_RGB = layers.Input(shape=(c_size[0], c_size[1], 3))
 	x = layers.Conv2D(32, (3,3), activation='relu', padding='same')(input_RGB)
@@ -72,13 +84,17 @@ def create_network_base(num_classes):
 
 	model = keras.Model(inputs=[input_RGB, input_H], outputs=[class_output, mask_output])
 
-	losses = {"class_output": 'categorical_crossentropy', "mask_output":'mean_squared_error'}
-	loss_weights = {"class_output": 1.0, "mask_output": 0.5}
-	model.compile(optimizer='adam', loss=losses, loss_weights=loss_weights, metrics=['accuracy'])
-
 	return model
 
-def create_network_v2(num_classes):
+def create_network_v2(num_classes=2):
+	"""
+	Differences compared to base:
+		- Added more layers and more feature maps in RBG and H networks.
+		- Increased number of fully connected layers in classification networks
+	"""
+	c_size = (64,64)
+	h_size = (20,20)
+
 	# Color image convolutional network
 	input_RGB = layers.Input(shape=(c_size[0], c_size[1], 3))
 	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(input_RGB)
@@ -86,7 +102,7 @@ def create_network_v2(num_classes):
 	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x)
 	x = layers.MaxPooling2D((2,2))(x)
 	x = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
-	c4 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
 	c4 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
 	x = layers.MaxPooling2D((2,2))(c4)
 	x = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
@@ -119,111 +135,229 @@ def create_network_v2(num_classes):
 	class_output = layers.Dense(num_classes, activation='softmax', name='class_output')(z)
 
 	# FCN Masking part
-	# z16x16 = layers.Reshape((16,16,1))(z_top)
-	# zc = layers.Conv2D(filters=c7.get_shape().as_list()[-1], kernel_size=1)(z16x16)
 	f = layers.Conv2D(filters=1, kernel_size=1)(c7)
-	# f = layers.Add()([f, zc])
 	f = layers.Conv2DTranspose(filters=c4.get_shape().as_list()[-1], kernel_size=4, strides=(2,2), padding='same', name='fcn2')(f)
 	f = layers.Add()([f, c4])
-	# f = layers.Conv2D(filters=1, kernel_size=1)(f)
 	mask_output = layers.Conv2DTranspose(filters=1, kernel_size=4, strides=(2,2), padding='same', name='mask_output')(f)
 
 	model = keras.Model(inputs=[input_RGB, input_H], outputs=[class_output, mask_output])
 
-	losses = {"class_output": 'categorical_crossentropy', "mask_output":'mean_squared_error'}
-	loss_weights = {"class_output": 1.0, "mask_output": 0.5}
+	return model
 
-	opt = keras.optimizers.Adam(learning_rate=0.0001)			# learning rate should be ~1e-4
-	model.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=['accuracy'])
+def create_network_v3(num_classes=2):
+	"""
+	Differences compared to v2: 
+		- Added another Conv layer in RGB part that is connected to FCN
+	"""
+	c_size = (64,64)
+	h_size = (20,20)
+
+	# Color image convolutional network
+	input_RGB = layers.Input(shape=(c_size[0], c_size[1], 3))
+	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(input_RGB)
+	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(x)
+	x = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	c4 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(c4)
+	x = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	c7 = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(c7)
+	c9 = layers.Conv2D(512, (3,3), activation='relu', padding='same')(x)
+	x = layers.Flatten()(x)
+
+	# Height image convolutional network
+	input_H = layers.Input(shape=(h_size[0], h_size[1], 1))
+	y = layers.Conv2D(32, (3,3), activation='relu')(input_H)
+	y = layers.Conv2D(32, (3,3), activation='relu', padding='same')(y)
+	y = layers.MaxPooling2D((2,2))(y)
+	y = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y)
+	y = layers.MaxPooling2D((2,2))(y)
+	y = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y)			#added
+	y = layers.Flatten()(y)
+
+	# Combine Color and Height networks into FC layers
+	combined = layers.concatenate([x, y])
+	z = layers.Dense(256, activation='relu')(combined)
+	z = layers.Dense(128,  activation='relu')(z)
+	z = layers.Dense(64,  activation='relu')(z)
+	z = layers.Dense(32,  activation='relu')(z)
+	class_output = layers.Dense(num_classes, activation='softmax', name='class_output')(z)
+
+	# FCN Masking part
+	f1 = layers.Conv2D(filters=1, kernel_size=1)(c9)
+	f1 = layers.Conv2DTranspose(filters=c7.get_shape().as_list()[-1], kernel_size=4, strides=(2,2), padding='same')(f1)
+	f2 = layers.Conv2D(filters=1, kernel_size=1)(c7)
+	f2 = layers.Add()([f2, f1])
+	f2 = layers.Conv2DTranspose(filters=c4.get_shape().as_list()[-1], kernel_size=4, strides=(2,2), padding='same')(f2)
+	f2 = layers.Add()([f2, c4])
+	mask_output = layers.Conv2DTranspose(filters=1, kernel_size=4, strides=(2,2), padding='same', name='mask_output')(f2)
+
+	model = keras.Model(inputs=[input_RGB, input_H], outputs=[class_output, mask_output])
 
 	return model
 
-def init_data_tensors(c_size, h_size, master, c_dir, h_dir, mask_dir):
-	class_names = os.listdir(master+c_dir)
-	color_filenames, height_filenames, mask_filenames = [], [], []
-	label_idxs = []
-	for (k, class_name) in enumerate(class_names):
-		color_titles = os.listdir(master+c_dir+class_name)
-		height_titles = os.listdir(master+h_dir+class_name)
-		mask_titles = os.listdir(master+mask_dir+class_name)
-		color_titles.sort()
-		height_titles.sort()
-		mask_titles.sort()
-		color_filenames  += [class_name+'/'+title for title in color_titles]
-		height_filenames += [class_name+'/'+title for title in height_titles]
-		mask_filenames   += [class_name+'/'+title for title in mask_titles]
-		label_idxs += [class_names.index(class_name) for title in color_titles]
-		print('Found {} training images for class "{}"'.format(len(color_titles), class_name))
+def create_network_v4(num_classes=2):
+	"""
+	Differences compared to v3: 
+		- Reduced Height input size from (20,20) to (16,16) to make it compatible with mask network.
+		- Increased height network and added its output to masking step.
+	"""
+	c_size = (64,64)
+	h_size = (16,16)
 
-	if not (len(color_filenames) == len(height_filenames) == len(mask_filenames)):
-		raise IndexError('Incompatible number of input files:\n {} RGB, {} H, {} mask'.format(len(color_filenames), len(height_filenames), len(mask_filenames)))
+	# Color image convolutional network
+	input_RGB = layers.Input(shape=(c_size[0], c_size[1], 3))
+	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(input_RGB)
+	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(64, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(x)
+	x = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	c4 = layers.Conv2D(128, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(c4)
+	x = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	x = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	c7 = layers.Conv2D(256, (3,3), activation='relu', padding='same')(x)
+	x = layers.MaxPooling2D((2,2))(c7)
+	c_out = layers.Conv2D(512, (3,3), activation='relu', padding='same')(x)
+	x = layers.Flatten()(x)
 
-	input_length = len(label_idxs)
-	RGB_tensor   = np.zeros((input_length, c_size[0], c_size[1], 3), dtype=np.uint8)
-	H_tensor     = np.zeros((input_length, h_size[0], h_size[1], 1), dtype=np.uint8)
-	mask_tensor  = np.zeros((input_length, c_size[0], c_size[1], 1), dtype=np.uint8)
-	label_tensor = np.zeros((input_length, num_classes), dtype=np.uint8)
+	# Height image convolutional network
+	input_H = layers.Input(shape=(h_size[0], h_size[1], 1))
+	y = layers.Conv2D(64, (3,3), activation='relu', padding='same')(input_H)
+	y = layers.Conv2D(64, (3,3), activation='relu', padding='same')(y)
+	y = layers.MaxPooling2D((2,2))(y)
+	y = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(128, (3,3), activation='relu', padding='same')(y)
+	y = layers.MaxPooling2D((2,2))(y)
+	y = layers.Conv2D(256, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(256, (3,3), activation='relu', padding='same')(y)
+	y = layers.Conv2D(256, (3,3), activation='relu', padding='same')(y)
+	h_out = layers.Conv2D(512, (3,3), activation='relu', padding='same')(y)
+	y = layers.Flatten()(h_out)
 
-	for k in range(input_length):
-		rgb_arr  = np.array(Image.open(master+c_dir  + color_filenames[k] )).astype(np.uint8)
-		h_arr    = np.array(Image.open(master+h_dir + height_filenames[k])).astype(np.uint8)
-		RGB_tensor[k,:,:,:]  = cv2.resize(rgb_arr, c_size)
-		H_tensor[k,:,:,0]    = cv2.resize(h_arr,   h_size)
-		label_tensor[k, label_idxs[k]] = 1
-		# if label_idxs[k] > 0:					# non-background, if background the mask is empty
-		mask_arr = np.array(Image.open(master+mask_dir   + mask_filenames[k]  )).astype(np.uint8)
-		mask_tensor[k,:,:,0] = cv2.resize(mask_arr, c_size)
+	# Combine Color and Height networks into FC layers
+	combined = layers.concatenate([x, y])
+	z = layers.Dense(256, activation='relu')(combined)
+	z = layers.Dense(128,  activation='relu')(z)
+	z = layers.Dense(64,  activation='relu')(z)
+	z = layers.Dense(32,  activation='relu')(z)
+	class_output = layers.Dense(num_classes, activation='softmax', name='class_output')(z)
 
-	print('Tensors inintialized')
-	p = np.random.permutation(input_length)		# shuffle data
-	# p = np.arange(input_length)
-	RGB_tensor, H_tensor, mask_tensor, label_tensor = RGB_tensor[p,...], H_tensor[p,...], mask_tensor[p,...], label_tensor[p,...]
-	return [RGB_tensor, H_tensor], [label_tensor, mask_tensor]
+	# FCN Masking part
+	f1 = layers.Conv2D(filters=1, kernel_size=1)(h_out)
+	f1 = layers.Conv2DTranspose(filters=c_out.get_shape().as_list()[-1], kernel_size=4, strides=(2,2), padding='same')(f1)
+	f2 = layers.Conv2D(filters=1, kernel_size=1)(c_out)
+	f2 = layers.Add()([f1, f2])
+	f2 = layers.Conv2DTranspose(filters=c7.get_shape().as_list()[-1], kernel_size=4, strides=(2,2), padding='same')(f2)
+	f3 = layers.Conv2D(filters=1, kernel_size=1)(c7)
+	f3 = layers.Add()([f2, f3])
+	f3 = layers.Conv2DTranspose(filters=c4.get_shape().as_list()[-1], kernel_size=4, strides=(2,2), padding='same')(f3)
+	f3 = layers.Add()([f3, c4])
+	mask_output = layers.Conv2DTranspose(filters=1, kernel_size=4, strides=(2,2), padding='same', name='mask_output')(f3)
 
-def show_prediction(model, RGB_tensor, H_tensor, class_names=None):
-	"""Testing function to show if output makes sense"""
-	labels, masks = model.predict([RGB_tensor, H_tensor])
-	for n in range(RGB_tensor.shape[0]):
-		f, axs = plt.subplots(2,2)
-		(ax1, ax2, ax3, ax4) = axs.flatten()
-		ax1.imshow(RGB_tensor[n,...])
-		ax2.imshow(H_tensor[n,:,:,0])
-		ax3.imshow(masks[n,:,:,0], cmap='gray')
-		ax4.imshow(masks[n,:,:,0]>0.5, cmap='gray')
-		if class_names==None:
-			ax1.set_title(np.argmax(labels[n,:]))
-		else:
-			ax1.set_title(class_names[np.argmax(labels[n,:])])
-		for ax in (ax1, ax2, ax3, ax4):
+	model = keras.Model(inputs=[input_RGB, input_H], outputs=[class_output, mask_output])
+
+	return model
+
+#========================================== Initialization ============================================
+def compile_model(model, learning_rate=1e-4, mask_loss_weight=0.5):
+	"""Compile model with adam optimizer with alpha=learning_rate. The parameter
+	mask_loss_weight determines how 'important' the mask_output_loss is compared to the
+	class_output_loss, with 1 denoting a 50/50 split."""
+	losses = {"class_output": 'categorical_crossentropy', "mask_output":'mae'}
+	# losses = {"class_output": 'categorical_crossentropy', "mask_output":'mean_squared_error'}
+	loss_weights = {"class_output": 1.0, "mask_output": mask_loss_weight}
+	metrics = {'class_output':'accuracy', 'mask_output':'binary_accuracy'}
+	opt = keras.optimizers.Adam(learning_rate=learning_rate)
+	model.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=metrics)
+
+def init_data_generator(data_path, model):
+	"""Initializes a generator object that generates input-output tuples of the form
+	[RGB_image, H_image], [Label, Mask]. The path data_path should contain the following folders:
+		- 'Training Data Color/'
+		- 'Training Data Height/'
+		- 'Training Data Mask/'
+	The model that is to be trained should also be passed as an argument, such that the size of
+	its input layers can be determined."""
+
+	c_size = model.get_input_at(0)[0].get_shape().as_list()[1:3]
+	h_size = model.get_input_at(0)[1].get_shape().as_list()[1:3]
+
+	dir_color  = 'Training Data Color/'
+	dir_height = 'Training Data Height/'
+	dir_mask   = 'Training Data Mask/'
+	if not os.path.exists(data_path+dir_color) or not os.path.exists(data_path+dir_height) or not os.path.exists(data_path+dir_mask):
+		raise IOError('The folders {}, {}, {} have not been found in {}. \
+			Either the path is wrong or the dataset has a wrong structure.'.format(dir_color, dir_height, dir_mask, data_path))
+
+	gen_object = prep.image.ImageDataGenerator()
+
+	def Multi_Input_Output_Flow(generator, dir_c, dir_h, dir_m, seed=0):
+		gen_color  = generator.flow_from_directory(dir_c, target_size=c_size, class_mode='categorical', 
+			batch_size=batch_size, shuffle=True, seed=seed, color_mode='rgb')
+		gen_height = generator.flow_from_directory(dir_h, target_size=h_size, class_mode='categorical', 
+			batch_size=batch_size, shuffle=True, seed=seed, color_mode='grayscale')
+		gen_mask   = generator.flow_from_directory(dir_m, target_size=c_size, class_mode='categorical', 
+			batch_size=batch_size, shuffle=True, seed=seed, color_mode='grayscale')
+		while True:
+			im_color  = gen_color.next()
+			im_height = gen_height.next()
+			im_mask   = gen_mask.next()
+			yield [im_color[0], im_height[0]], [im_color[1], im_mask[0]]  				# [RGB, Height], [label, Mask]
+			    
+	return Multi_Input_Output_Flow(gen_object, data_path+dir_color, data_path+dir_height, data_path+dir_mask)       
+
+#========================================= Visualize Result ===========================================
+def show_predictions(k, gen, model, class_names=['Background', 'Broccoli']):
+	"""Debugging method to show k (<=batch_size) random inputs and its corresponding model output."""
+	[color_ims, height_ims], [labels, masks] = next(gen)
+	[pred_labs, pred_masks] = model.predict([color_ims, height_ims])
+	for i in range(k):
+		f, axs = plt.subplots(2,3, figsize=(4,4))
+		(ax1, ax2, ax3, ax4, ax5, ax6) = axs.flatten()
+		ax1.imshow(color_ims[i,:,:,:].astype(np.uint8))
+		ax4.imshow(pred_masks[i,:,:,0], cmap='gray')
+		ax5.imshow(pred_masks[i,:,:,0]>0.5, cmap='gray')
+		ax3.imshow(masks[i,:,:,0], cmap='gray')
+		ax2.imshow(height_ims[i,:,:,0], cmap='Reds')
+		for ax in axs.flatten():
 			ax.axis('off')
+		label_true = np.argmax(labels[i,...])
+		label_pred = np.argmax(pred_labs[i,...])
+		f.suptitle('{} : {}'.format(class_names[label_pred], class_names[label_true]), fontsize=8)
+		ax1.set_title('Input (RGB)', fontsize=8)
+		ax2.set_title('Input (H)', fontsize=8)
+		ax3.set_title('Mask (true)', fontsize=8)
+		ax4.set_title('Mask (soft)', fontsize=8)
+		ax5.set_title('Mask (pred)', fontsize=8)
 	plt.show()
 
+#========================================= Visualize Result ===========================================
+
 if __name__ == "__main__":
-	# master_dir = '/home/duncan/Documents/VanBoven/Code/Git Folder/testing/'
-	# c_dir  	 = 'Training Data Color/'
-	# h_dir 	 = 'Training Data Height/'
-	# mask_dir = 'Training Data Mask/'
+	master_dir = './testing/'
 
-	master_dir = r'.\\testing\\'
-	c_dir  	 = r'Training Data Color\\'
-	h_dir 	 = r'Training Data Height\\'
-	mask_dir = r'Training Data Mask\\'
-	num_classes = len(os.listdir(master_dir+c_dir))
-	input_tensors, output_tensors = init_data_tensors(c_size, h_size, master_dir, c_dir, h_dir, mask_dir)
+	# model = load_separate('Unified CNNs/broccoli_unified_v4')
+	model = create_network_v4()
 
-	# model = create_network_base(num_classes)
-	model = create_network_v2(num_classes)
+	gen = init_data_generator(master_dir, model)
 
-	EPOCHS = 6
-	es = keras.callbacks.EarlyStopping(monitor='mask_output_acc', mode='max')
-	model.fit(input_tensors, {"mask_output":output_tensors[1], "class_output": output_tensors[0]}, \
-			  epochs=EPOCHS,
-			  steps_per_epoch=input_tensors[0].shape[0]//EPOCHS,
-			  callbacks=[es])
+	compile_model(model, mask_loss_weight=0.75)
 
-	model.save('Unified CNNs/broccoli_unified_GPU.h5')
-	save_separate(model, 'Unified CNNs/broccoli_unified_GPU')
+	model.fit_generator(gen, epochs=2, steps_per_epoch=20)
+	model.save('Unified CNNs/broccoli_unified_v4.h5')
+	save_separate(model, 'Unified CNNs/broccoli_unified_v4')
 
-	model = windows_load('Unified CNNs/broccoli_unified_GPU')
-	idxs = [0, 1, 2, 3, 4]
-	show_prediction(model, input_tensors[0][idxs,...], input_tensors[1][idxs,...])
+	show_predictions(5, gen, model)
