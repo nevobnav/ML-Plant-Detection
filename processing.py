@@ -10,7 +10,7 @@ from skimage import measure
 import skimage.color
 from scipy.spatial import KDTree
 
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, Point
 from scipy.spatial import Delaunay
 from skimage.feature import peak_local_max
 
@@ -198,6 +198,7 @@ def remove_unconnected_components(masks):
 def find_contours(rects, masks):
 	"""Finds contour around mask in each box in rects. Returns a list containing (N,2) numpy arrays."""
 	contours = []
+	idxs = []
 	for (i, rect) in enumerate(rects):
 		x, y, w, h = rect
 		mask = masks[i,...] # cv2.resize(masks[i,...], (w, h))
@@ -205,12 +206,13 @@ def find_contours(rects, masks):
 			rel_cnt = measure.find_contours(mask, 0.5)[0].astype(float)
 			rel_cnt[:,0] = rel_cnt[:,0]*w/mask.shape[1]
 			rel_cnt[:,1] = rel_cnt[:,1]*h/mask.shape[0]
+			rel_cnt[:,0] += y
+			rel_cnt[:,1] += x
+			contours.append(rel_cnt)
+			idxs.append(i)
 		except IndexError:
 			rel_cnt = np.array([[0,0],[0,w],[h,w],[h,0]])
-		rel_cnt[:,0] += y
-		rel_cnt[:,1] += x
-		contours.append(rel_cnt)
-	return contours
+	return contours, idxs
 
 def find_centroids(rects, masks):
 	"""Computes the centroids of each mask in masks. Returns an (N,2) numpy array, where each slice
@@ -231,6 +233,17 @@ def find_centroids(rects, masks):
 			yc = np.sum(ys*mask.T)*box_size/mask_height
 			centroids[i,:] = [x+xc/area, y+yc/area]
 	return centroids
+
+def remove_shifted_centroids(centroids, contours):
+	new_contours = []
+	idxs = []
+	for (k, cnt) in enumerate(contours):
+		center = Point((centroids[k,1], centroids[k,0]))
+		poly = Polygon([(cnt[j,0], cnt[j,1]) for j in range(cnt.shape[0])])
+		if poly.contains(center):
+			new_contours.append(cnt)
+			idxs.append(k)
+	return centroids[idxs], new_contours, idxs
 
 def remove_duplicates(center_centroids, center_contours, other_centroids, shift, overlap_distance=-1):
 	picks = []
