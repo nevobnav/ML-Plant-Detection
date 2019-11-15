@@ -1,5 +1,5 @@
 #!/usr/bin/python3.6
-platform = 'linux'
+platform = 'windows'
 #================================================== Imports ==================================================
 import os
 import cv2
@@ -21,7 +21,7 @@ import tif_functions
 import settings
 
 #================================================= Crop Type =================================================
-params = settings.get_settings('broccoli_unified', box_size=50, block_size=2000)
+params = settings.get_settings('broccoli_unified', box_size=50, block_size=1000)
 for param in params.keys():												# load all non-string parameters
 	if type(params[param]) != str:
 		exec('{}={}'.format(param, params[param]))
@@ -112,11 +112,11 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	if filter_empty_masks:
 		masks, boxes, [confidence] = proc.discard_empty(masks, boxes, other=[confidence], t=crop_size_threshold)
 
+	print(len(masks))
 	contours, idxs = proc.find_contours(boxes, masks)
+	print(len(idxs))
 	boxes, confidence, masks = boxes[idxs], confidence[idxs], masks[idxs]
 	centroids = proc.find_centroids(boxes, masks)
-	# centroids, contours, idxs = proc.remove_shifted_centroids(centroids, contours)
-	# boxes, confidence = boxes[idxs], confidence[idxs]
 
 	if get_background:
 		background_boxes, background_confidence = proc.get_class(c_rects, predictions, 0)
@@ -333,4 +333,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, get_background=True)#, max_count=10)#, max_count=10)#, get_background=True)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, get_background=True, max_count=10)#, max_count=10)#, get_background=True)
