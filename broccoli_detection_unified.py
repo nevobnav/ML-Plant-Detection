@@ -99,7 +99,11 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 	print('Found {} valid blocks of a total of {}'.format(len(valid_blocks), (num_rows+1)*(num_cols+1)))
 	return valid_blocks
 
-def create_boxes(c_coords):
+def create_boxes(c_coords, box_size):
+	"""Creates two arrays of shape (N,4) containing the locations and dimensions of the
+	boxes that should be fed through the network, based on the coordinates in c_coords.
+	 The first array contains boxes relative to the RGB input, the second array contains 
+	 boxes relative to the DEM input."""
 	h_size = int(np.round(dem_scale_factor*box_size))
 	h_coords = np.round(dem_scale_factor*c_coords).astype(int) 									# convert to DEM row/col
 	c_rects = np.zeros((c_coords.shape[0], 4), dtype=int)
@@ -115,6 +119,7 @@ def create_boxes(c_coords):
 	return c_rects, h_rects
 
 def fill_data_tensor(c_im, h_im, c_rects, h_rects):
+	"""Initializes two input tensors (RBG & DEM) using the boxes provided by c_rects and h_rects."""
 	num_candidates = c_rects.shape[0]
 	c_crops = np.zeros((num_candidates, c_box[0], c_box[1], 3), dtype=np.uint8)		# initialize tensors
 	h_crops = np.zeros((num_candidates, h_box[0], h_box[1], 1), dtype=np.uint8)
@@ -138,7 +143,7 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 		raise IndexError
 
 	c_coords = proc.green_hotspots(c_im, sigma=sigma, padding=padding)							# run region proposer
-	c_rects, h_rects = create_boxes(c_coords)
+	c_rects, h_rects = create_boxes(c_coords, box_size)
 	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
 
 	predictions, masks = network.predict([c_crops, h_crops], verbose=1)							# run classification model
@@ -198,6 +203,9 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 	return crop_dict, bg_dict
 
 def remove_duplicates(center_centroids, center_contours, other_centroids, shift):
+	"""Uses KDTree to remove duplicates in overlapping regions between two adjacent blocks. Shift should be a 
+	tuple of the form (w, h), such that w is added to the first component of each point in other_centroids, and h
+	is added to the second component. This is necessary because all points are relative to their corresponding block."""
 	picks = []
 	if len(other_centroids)>0:
 		picks = []
@@ -212,7 +220,7 @@ def remove_duplicates(center_centroids, center_contours, other_centroids, shift)
 		return center_centroids, center_contours
 
 def process_overlap(crop_dict, block_overlap):
-	"""Uses KDTree to remove duplicates in overlapping regions between two adjacent blocks."""
+	"""For each block, remove overlapping contour with members of its N, E and NE neighbour blocks."""
 	for (i,j) in crop_dict.keys():
 		contours  = crop_dict[(i,j)]['contours']
 		centroids = crop_dict[(i,j)]['centroids']
