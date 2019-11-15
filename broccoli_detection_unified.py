@@ -2,7 +2,6 @@
 platform = 'windows'
 #================================================== Imports ==================================================
 import os
-import traceback
 import cv2
 # import pathlib
 import pickle
@@ -122,8 +121,8 @@ def create_boxes(c_coords, box_size):
 def fill_data_tensor(c_im, h_im, c_rects, h_rects):
 	"""Initializes two input tensors (RBG & DEM) using the boxes provided by c_rects and h_rects."""
 	num_candidates = c_rects.shape[0]
-	c_crops = np.zeros((num_candidates, c_box[0], c_box[1], 3), dtype=np.uint8)		# initialize tensors
-	h_crops = np.zeros((num_candidates, h_box[0], h_box[1], 1), dtype=np.uint8)
+	input_RGB = np.zeros((num_candidates, c_box[0], c_box[1], 3), dtype=np.uint8)		# initialize tensors
+	input_DEM = np.zeros((num_candidates, h_box[0], h_box[1], 1), dtype=np.uint8)
 	for i in range(num_candidates):
 		x_c, y_c, w_c, h_c = c_rects[i,:]
 		x_h, y_h, w_h, h_h = h_rects[i,:]
@@ -132,11 +131,11 @@ def fill_data_tensor(c_im, h_im, c_rects, h_rects):
 		try:
 			c_crop = cv2.resize(c_crop, (c_box[0], c_box[1]))
 			h_crop = cv2.resize(h_crop, (h_box[0], h_box[1]))
-			c_crops[i,:,:,:] = c_crop
-			h_crops[i,:,:,0] = h_crop
+			input_RGB[i,:,:,:] = c_crop
+			input_DEM[i,:,:,0] = h_crop
 		except:
 			raise IndexError('cropping failed with c_rect = ({}, {}, {}, {}), h_rect=({}, {}, {}, {})'.format(x_c, y_c, w_c, h_c, x_h, y_h, w_h, h_h))
-	return c_crops, h_crops
+	return input_RGB, input_DEM
 
 def run_on_block(c_im, h_im, padding=0, get_background=False):
 	"""Run complete model on the block c_im and its corresponding height block h_im."""
@@ -145,9 +144,13 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 
 	c_coords = proc.green_hotspots(c_im, sigma=sigma, padding=padding)							# run region proposer
 	c_rects, h_rects = create_boxes(c_coords, box_size)
-	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
+	input_RGB, input_DEM = fill_data_tensor(c_im, h_im, c_rects, h_rects)
 
-	predictions, masks = network.predict([c_crops, h_crops], verbose=1)							# run classification model
+	# --------
+	input_RGB = processing.apply_preprocessing(input_RGB, function=processing.cielab)
+	# --------
+
+	predictions, masks = network.predict([input_RGB, input_DEM], verbose=1)							# run classification model
 	masks = masks[...,0]
 	crop_idxs = proc.get_class_idxs(predictions, 1)
 	boxes, [confidence, masks] = c_rects[crop_idxs], [predictions[crop_idxs], masks[crop_idxs]]
@@ -183,7 +186,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 			crop_output, bg_output = run_on_block(c_im, h_im, padding=box_size)
 		except Exception as e:
 			print('Discarded all crops somewhere in pipeline while processing block ({},{})'.format(i,j))
-			print('Exception raised: "{}" in line {}\n'.format(e, traceback.format_exc().split(',')[1].split(' ')[-1]))
+			print('Exception raised: "{}"\n'.format(e))
 			continue
 
 		contours, centroids, boxes, confidence  = crop_output

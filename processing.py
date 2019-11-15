@@ -41,6 +41,16 @@ def dark_hotspots(im, sigma=6, padding=0, m=2):
 	coords = np.argwhere(mask==1)
 	return coords+padding
 
+# ========================================= Pre-Processing ==============================================
+def cielab(array):
+	return skimage.color.rgb2lab(array)
+
+def apply_preprocessing(input_tensor, function=None):
+	processed_tensor = np.zeros(input_tensor.shape)
+	for (k, array) in enumerate(input_tensor):
+		processed_tensor[i,...] = function(array)
+	return processed_tensor
+
 # =========================================== Box filters ===============================================
 def multi_class_sort(rects, predictions, bg_index=0):
 	"""Sorts each box in rects into its class as predicted by the array predictions. Returns a tuple of the
