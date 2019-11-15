@@ -1,6 +1,5 @@
 #!/usr/bin/python3.6
 platform = 'linux'
-
 #================================================== Imports ==================================================
 import os
 import cv2
@@ -35,9 +34,9 @@ if platform == 'linux':
 	dem_path = r"/home/duncan/Documents/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
 	clp_path = r"/home/duncan/Documents/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
 elif platform == 'windows':
-	img_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907170749-GR.tif"
-	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907170749_DEM-GR.tif"
-	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\c01_verdonk-Wever west-201907170749-GR_FIELD.shp"
+	img_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724-GR.tif"
+	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724_DEM-GR.tif"
+	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
 
 dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_adj_window	 = dem_functions['get_adjusted_window']
@@ -97,7 +96,7 @@ def fill_data_tensor(c_im, h_im, c_rects, h_rects):
 
 def run_on_block(c_im, h_im, padding=0, get_background=False):
 	"""Run complete model on the block c_im and its corresponding height block h_im."""
-	if c_im.mean() <= 2:		# black part
+	if c_im.mean() <= 1e-6:		# black part
 		raise IndexError
 	c_coords = proc.green_hotspots(c_im, sigma=sigma, padding=padding)							# run region proposer
 	c_rects, h_rects = create_boxes(c_coords)
@@ -108,18 +107,16 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	crop_idxs = proc.get_class_idxs(predictions, 1)
 	boxes, confidence, masks = c_rects[crop_idxs], predictions[crop_idxs], masks[crop_idxs]
 	boxes, (confidence, masks) = proc.non_max_suppression(boxes, other=[confidence, masks], t=overlap_threshold)
+	masks = proc.clean_up_pred_masks(masks)
 
 	if filter_empty_masks:
-		masks, [boxes, confidence] = proc.discard_empty(masks, other=[boxes, confidence], t=crop_size_threshold)
-
-	if filter_disjoint:
-		masks = proc.remove_unconnected_components(masks)
+		masks, boxes, [confidence] = proc.discard_empty(masks, boxes, other=[confidence], t=crop_size_threshold)
 
 	contours, idxs = proc.find_contours(boxes, masks)
 	boxes, confidence, masks = boxes[idxs], confidence[idxs], masks[idxs]
 	centroids = proc.find_centroids(boxes, masks)
-	centroids, contours, idxs = proc.remove_shifted_centroids(centroids, contours)
-	boxes, confidence = boxes[idxs], confidence[idxs]
+	# centroids, contours, idxs = proc.remove_shifted_centroids(centroids, contours)
+	# boxes, confidence = boxes[idxs], confidence[idxs]
 
 	if get_background:
 		background_boxes, background_confidence = proc.get_class(c_rects, predictions, 0)
@@ -180,6 +177,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 		c_im, h_im = get_block(i_ad, j_ad, height, width)
 		if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
 			continue
+
 		try:
 			if get_background:
 				contours, centroids, confidence, boxes, background_boxes, background_confidence\
@@ -300,7 +298,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 								output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
 							            		  'geometry': mapping(transformed_points)})
 								output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
-						            	  'geometry': mapping(transformed_centroid)})
+								            	  'geometry': mapping(transformed_centroid)})
 								count += 1
 							else:
 								print('Crop ({},{}):{} intersects field edge'.format(i,j,k))
@@ -335,4 +333,4 @@ if __name__ == "__main__":
 		out_directory = r"../PLANT COUNT - "+img_name+r"\\"
 	if not os.path.exists(out_directory):
 	    os.makedirs(out_directory)
-	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, get_background=True)#, max_count=10)#, get_background=True)
+	write_shapefiles(out_directory, block_size=block_size, block_overlap=block_overlap, get_background=True)#, max_count=10)#, max_count=10)#, get_background=True)

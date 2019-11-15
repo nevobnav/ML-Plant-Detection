@@ -125,18 +125,19 @@ def get_masks(rects, c_im, model, verbose=1):
 		masks[i,...] = cv2.resize(predictions[i,...].astype(np.uint8), (w,h))
 	return masks
 
-def discard_empty(masks, other=[], t=0.01):
+def discard_empty(masks, rects, other=[], t=0.01):
 	"""Discards rectangles which are nearly empty. The parameter t determines the minimum amount of the
 	box that should be filled as a fraction of the total area."""
 	crop_areas = np.sum(np.sum(masks, axis=2), axis=1)#[:,0]
 	is_almost_empty = crop_areas < t*rects[:,2]*rects[:,3]
 	filtered_masks = np.array([elt for (i,elt) in enumerate(masks) if not is_almost_empty[i]])
+	filtered_rects = np.array([elt for (i,elt) in enumerate(rects) if not is_almost_empty[i]])
 	for (idx, o) in enumerate(other):
 		other[idx] = np.array([elt for (i,elt) in enumerate(o) if not is_almost_empty[i]])
 	if len(other) > 0:
-		return filtered_masks, other
+		return filtered_masks, filtered_rects, other
 	else:
-		return filtered_masks
+		return filtered_masks, filtered_rects
 
 def recenter_boxes(rects, masks, d=0.1):
 	"""If the (relative) distance from box center to mask centroid is greater than d, move box such that centroid
@@ -172,8 +173,28 @@ def remove_unconnected_components(masks):
 			masks[i,:,:] = labelled_mask==n
 	return masks
 
+def clean_up_pred_masks(masks, sigma=2):
+	"""Smooths each mask by applying a Gaussian filter with std. dev. sigma, and subsequently
+	removes smaller blobs from the mask using the function remove_unconnected_components"""
+	new_masks = np.zeros(masks.shape)
+	for (i, mask) in enumerate(masks):
+		mask = filters.gaussian_filter(mask, sigma)>0.5
+		labelled_mask, num_components = measurements.label(mask)
+		areas = []
+		if num_components > 1:
+			for k in range(1, num_components+1):
+				area = (labelled_mask==k).sum()
+				areas.append(area)
+			n = np.argmax(areas)+1
+			new_masks[i,:,:] = labelled_mask==n
+		else:
+			new_masks[i,:,:] = mask
+	return new_masks
+
 def find_contours(rects, masks):
-	"""Finds contour around mask in each box in rects. Returns a list containing (N,2) numpy arrays."""
+	"""Finds contour around mask in each box in rects. Returns a list containing (N,2) numpy arrays.
+	Depending on the quality of the mask, no valid contours might be found. In this case, the box in
+	question is skipped. A list of indices is returned of all boxes that contain a valid contour."""
 	contours = []
 	idxs = []
 	for (i, rect) in enumerate(rects):
@@ -188,7 +209,7 @@ def find_contours(rects, masks):
 			contours.append(rel_cnt)
 			idxs.append(i)
 		except IndexError:
-			rel_cnt = np.array([[0,0],[0,w],[h,w],[h,0]])
+			continue
 	return contours, idxs
 
 def find_centroids(rects, masks):
@@ -286,13 +307,11 @@ if __name__ == "__main__":
 	masks[0,...] = M1
 	masks[1,...] = M
 
-	cnts = find_contours(M)
-	cnts = np.dstack((cnt for cnt in cnts))
-	print(cnts.shape)
+	masks = remove_unconnected_components(masks)
 
 	import matplotlib.pyplot as plt
-	plt.imshow(mask)
-	for (i, cnt) in enumerate(cnts):
-		plt.plot(cnt[:,1], cnt[:,0], 'w', lw=0.5)
-		plt.text(cnt[:,1].mean(), cnt[:,0].mean(), '{:.3f}'.format(w[i]), ha='center')
+	plt.imshow(masks[1,...])
+	# for (i, cnt) in enumerate(cnts):
+	# 	plt.plot(cnt[:,1], cnt[:,0], 'w', lw=0.5)
+	# 	plt.text(cnt[:,1].mean(), cnt[:,0].mean(), '{:.3f}'.format(w[i]), ha='center')
 	plt.show()

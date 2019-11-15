@@ -35,9 +35,9 @@ if platform == 'linux':
 	dem_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+r"_DEM"+GR*'-GR'+".tif"
 	clp_path = r"../../Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r"_FIELD.shp"
 elif platform == 'windows':
-	img_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 2-201907170908-GR.tif"
-	dem_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 2-201907170908_DEM-GR.tif"
-	clp_path = r".\\Field Shapefiles\\c01_verdonk-Rijweg stalling 2-201907170908-GR_FIELD.shp"
+	img_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907170749-GR.tif"
+	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907170749_DEM-GR.tif"
+	clp_path = r".\\Field Shapefiles\\c01_verdonk-Wever west-201907170749-GR_FIELD.shp"
 
 dem_functions 	 = tif_functions.get_functions(img_path, dem_path, clp_path)		# functions to jump between color image and heightmap
 get_adj_window	 = dem_functions['get_adjusted_window']

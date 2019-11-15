@@ -57,7 +57,8 @@ class BroccoliUnifiedSettings(object):
 		filter_disjoint = True
 		c_box = (64, 64)
 		h_box = (16, 16)
-		model_name = 'Unified CNNs/broccoli_unified_v4_121119_mae.h5'
+		# model_name = 'Unified CNNs/broccoli_unified_v5_141119_v2.h5'
+		model_name = 'Unified CNNs/broccoli_unified_v5_151119.h5'
 		block_size = 500
 		block_overlap = int(1.5*box_size)
 

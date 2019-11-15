@@ -7,8 +7,8 @@
 
 import os
 import shutil
-import numpy as np 
-import matplotlib.pyplot as plt 
+import numpy as np
+import matplotlib.pyplot as plt
 import skimage
 from PIL import Image
 import cv2
@@ -34,7 +34,7 @@ def get_empty_mask(box_size):
 	return tmp
 
 def save_ims(ims, targets, label):
-	c_im, h_im, mask  = ims
+	c_im, h_im, mask = ims
 	dir_color, dir_height, dir_masks = targets
 	h_im = (h_im - h_im.min())
 	h_im *= 255/h_im.max()			# normalize height
@@ -49,7 +49,7 @@ def save_ims(ims, targets, label):
 	himim.save(h_save_path)
 	mask.save(m_save_path)
 
-def generate_data_from_pickle(data_path, target_dir='.', crop_name='Broccoli', min_confidence=0.99, mask_fill=1):
+def generate_data_from_pickle(data_path, target_dir='.', crop_name='Broccoli', min_confidence=0.99, mask_fill=1, max_count=1000):
 	with open(data_path, 'rb') as p:
 		data_dict = pickle.load(p)
 
@@ -87,6 +87,10 @@ def generate_data_from_pickle(data_path, target_dir='.', crop_name='Broccoli', m
 				save_ims((c_im, h_im, mask), (dir_color, dir_height, dir_masks), label=os.path.basename(img_path).split('.')[0]+'_{}_{}_{}'.format(row,col,k))
 
 				count += 1
+				if count >= max_count:
+					break
+		if count >= max_count:
+			break
 
 	print('{} images saved'.format(count))
 	return count
@@ -94,6 +98,10 @@ def generate_data_from_pickle(data_path, target_dir='.', crop_name='Broccoli', m
 def generate_background_data(BG_DATA, img_path, dem_path, clp_path, box_size, target_dir='.', min_confidence=0.99, max_count=np.infty):
 	with open(BG_DATA, 'rb') as p:
 		data_dict = pickle.load(p)
+
+	spatial_functions = tif_functions.get_functions(img_path, dem_path, clp_path)
+	img_rowcol = spatial_functions['img_rowcol']
+	get_block  = spatial_functions['get_block']
 
 	crop_name = 'Background'
 	dir_color  = target_dir+'/Training Data Color/'+crop_name+'/'
@@ -103,8 +111,6 @@ def generate_background_data(BG_DATA, img_path, dem_path, clp_path, box_size, ta
 		if not os.path.exists(direc):
 			os.makedirs(direc)
 
-	print('{} crop images saved'.format(count))
-	max_count = int(bg_factor*count)
 	count = 0
 
 	for (i,j) in data_dict:
@@ -143,9 +149,11 @@ def generate_data(CONTOURS, POINTS, BG_DATA, img_path, dem_path, clp_path, box_s
 
 	count = 0
 	for k in range(len(shp_pnts)):
+		# try:
 		pnt, cnt = shp_pnts[k], shp_cnts[k]
 		if pnt['properties']['name'] != cnt['properties']['name']:
-			raise IndexError('Point and Contour do not have the same name; datasets not of the same form.')
+			# raise IndexError('Point and Contour do not have the same name; datasets not of the same form.')
+			print()
 		pnt_xy = pnt['geometry']['coordinates']
 		cnt_xy = cnt['geometry']['coordinates'][0]
 		pnt_ij = img_rowcol(*pnt_xy)
@@ -160,6 +168,8 @@ def generate_data(CONTOURS, POINTS, BG_DATA, img_path, dem_path, clp_path, box_s
 		count += 1
 		if count >= max_count:
 			break
+		# except:
+		# 	print('Could not save image {}'.format(k))
 
 	with open(BG_DATA, 'rb') as p:
 		data_dict = pickle.load(p)
@@ -194,9 +204,9 @@ def generate_data(CONTOURS, POINTS, BG_DATA, img_path, dem_path, clp_path, box_s
 				count += 1
 				if count >= max_count:
 					# print('{} bg images saved'.format(count))
+					print('saved {} images of class "{}"'.format(count, 'Background'))
 					return count
 
-	print('saved {} images of class "{}"'.format(count, 'Background'))
 
 def merge_training_sets(path1, path2):
 	"""path1 and path2 should contain a number of class folders, which in turn contain the follwing folders:
@@ -223,14 +233,16 @@ if __name__ == "__main__":
 	# input_centers  = r"../../Orthomosaics/"+name+GR*'-GR'+r'/Plant Count/POINTS.shp'
 	# picklepath = r"../../Orthomosaics/"+name+GR*'-GR'+r'/Plant Count/BG_DATA.pickle'
 
-	name = "c01_verdonk-Rijweg stalling 2-201907170908-GR"
-	img_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 2-201907170908-GR.tif"
-	dem_path = r"D:\\Old GR\\c01_verdonk-Rijweg stalling 2-201907170908_DEM-GR.tif"
-	clp_path = r".\\Field Shapefiles\\c01_verdonk-Rijweg stalling 2-201907170908-GR_FIELD.shp"
+	name = "c01_verdonk-Wever oost-201907240707-GR"
+	img_path = r"D:\\Old GR\\c01_verdonk-Wever oost-201907240707-GR.tif"
+	dem_path = r"D:\\Old GR\\c01_verdonk-Wever oost-201907240707_DEM-GR.tif"
+	clp_path = r".\\Field Shapefiles\\c01_verdonk-Wever oost-201907240707-GR_FIELD.shp"
 	input_contours = r"..\\PLANT COUNT - "+name+r"\\CONTOURS.shp"
 	input_centers  = r"..\\PLANT COUNT - "+name+r"\\POINTS.shp"
-	picklepath     = r"..\\PLANT COUNT - "+name+r"\\BG_DATA.pickle"
+	data_pickle   = r"..\\PLANT COUNT - "+name+r"\\DATA.pickle"
+	bg_pickle     = r"..\\PLANT COUNT - "+name+r"\\BG_DATA.pickle"
 
 	target = r"..\\GeneratedTrainingData"
-	generate_data(input_contours, input_centers, picklepath, img_path, dem_path, clp_path, 50, bg_factor=1, target_dir=target, max_count=1000)
-	# generate_background_data(picklepath, img_path, dem_path, clp_path, 50, target_dir=target, max_count=1000)
+	generate_data(input_contours, input_centers, bg_pickle, img_path, dem_path, clp_path, 50, bg_factor=1.6, target_dir=target, max_count=1000)
+	# generate_data_from_pickle(data_pickle, target_dir=target, crop_name='Broccoli', max_count=10)
+	# generate_background_data(bg_pickle, img_path, dem_path, clp_path, 50, target_dir=target, max_count=1000)
