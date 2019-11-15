@@ -170,13 +170,14 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 	bg_dict = dict()
 
 	for (i,j) in valid_blocks:
-		c_im, h_im = get_block(*valid_blocks[(i,j)])
+		block = valid_blocks[(i,j)]
+		c_im, h_im = get_block(*block)
 
 		try:
 			crop_output, bg_output = run_on_block(c_im, h_im, padding=box_size)
 		except Exception as e:
 			print('Discarded all crops somewhere in pipeline while processing block ({},{})'.format(i,j))
-			print('Exception raised:', e)
+			print('Exception raised: "{}"\n'.format(e))
 			continue
 
 		contours, centroids, boxes, confidence  = crop_output
@@ -186,11 +187,11 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 							'centroids'  : centroids,
 							'boxes'		 : boxes,
 							'confidence' : confidence,
-							'block'		 : (i_ad, j_ad, height, width)}
+							'block'		 : block}
 
 		bg_dict[(i,j)] = {'background_boxes'	  : background_boxes,
 						  'background_confidence' :	background_confidence,
-						  'block'				  : (i_ad, j_ad, height, width)}
+						  'block'				  : block}
 
 		print('Added {} crops to block ({},{})\n'.format(len(contours), i, j))
 
