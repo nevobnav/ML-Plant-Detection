@@ -48,7 +48,7 @@ def cielab(array):
 def apply_preprocessing(input_tensor, function=None):
 	processed_tensor = np.zeros(input_tensor.shape)
 	for (k, array) in enumerate(input_tensor):
-		processed_tensor[i,...] = function(array)
+		processed_tensor[k,...] = function(array)
 	return processed_tensor
 
 # =========================================== Box filters ===============================================
