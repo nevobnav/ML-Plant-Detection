@@ -43,7 +43,7 @@ def dark_hotspots(im, sigma=6, padding=0, m=2):
 
 # ========================================= Pre-Processing ==============================================
 def cielab(array):
-	if len(array.shape)[-1] == 3:
+	if array.shape[-1] == 3:
 		return skimage.color.rgb2lab(array)
 	else:
 		return array

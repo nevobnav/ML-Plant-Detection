@@ -16,7 +16,7 @@ from PIL import Image
 import cv2
 from skimage import measure
 from scipy.ndimage import filters
-import proc
+import processing as proc
 
 batch_size = 128
 
