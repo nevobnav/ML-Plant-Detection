@@ -2,6 +2,7 @@
 platform = 'windows'
 #================================================== Imports ==================================================
 import os
+import traceback
 import cv2
 # import pathlib
 import pickle
