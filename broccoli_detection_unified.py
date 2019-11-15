@@ -180,9 +180,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 		c_im, h_im = get_block(i_ad, j_ad, height, width)
 		if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
 			continue
-
 		try:
-	# print('Block size: {} x {}'.format(c_im.shape[0], c_im.shape[1]))
 			if get_background:
 				contours, centroids, confidence, boxes, background_boxes, background_confidence\
 							 = run_on_block(c_im, h_im, padding=box_size, get_background=get_background)
