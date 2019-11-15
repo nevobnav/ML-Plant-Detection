@@ -16,7 +16,7 @@ from PIL import Image
 import cv2
 from skimage import measure
 from scipy.ndimage import filters
-import processing
+import proc
 
 batch_size = 128
 
@@ -381,12 +381,48 @@ def init_data_generator(data_path, model):
 
 	return Multi_Input_Output_Flow(gen_object, data_path+dir_color, data_path+dir_height, data_path+dir_mask)
 
+def init_data_generator_prep(data_path, model):
+	"""Initializes a generator object that generates input-output tuples of the form
+	[RGB_image, H_image], [Label, Mask]. The path data_path should contain the following folders:
+		- 'Training Data Color/'
+		- 'Training Data Height/'
+		- 'Training Data Mask/'
+	The model that is to be trained should also be passed as an argument, such that the size of
+	its input layers can be determined."""
+
+	c_size = model.get_input_at(0)[0].get_shape().as_list()[1:3]				# get spatial dimensions of inputs
+	h_size = model.get_input_at(0)[1].get_shape().as_list()[1:3]
+
+	dir_color  = 'Training Data Color/'
+	dir_height = 'Training Data Height/'
+	dir_mask   = 'Training Data Mask/'
+	if not os.path.exists(data_path+dir_color) or not os.path.exists(data_path+dir_height) or not os.path.exists(data_path+dir_mask):
+		raise IOError('The folders {}, {}, {} have not been found in {}. \
+			Either the path is wrong or the dataset has a wrong structure.'.format(dir_color, dir_height, dir_mask, data_path))
+
+	gen_object = prep.image.ImageDataGenerator(preprocessing_function=proc.cielab)
+
+	def Multi_Input_Output_Flow(generator, dir_c, dir_h, dir_m, seed=0):
+		gen_color  = generator.flow_from_directory(dir_c, target_size=c_size, class_mode='categorical',
+			batch_size=batch_size, shuffle=True, seed=seed, color_mode='rgb')
+		gen_height = generator.flow_from_directory(dir_h, target_size=h_size, class_mode='categorical',
+			batch_size=batch_size, shuffle=True, seed=seed, color_mode='grayscale')
+		gen_mask   = generator.flow_from_directory(dir_m, target_size=c_size, class_mode='categorical',
+			batch_size=batch_size, shuffle=True, seed=seed, color_mode='grayscale')
+		while True:
+			im_color  = gen_color.next()
+			im_height = gen_height.next()
+			im_mask   = gen_mask.next()
+			yield [im_color[0], im_height[0]], [im_color[1], im_mask[0]]  				# [RGB, Height], [label, Mask]
+
+	return Multi_Input_Output_Flow(gen_object, data_path+dir_color, data_path+dir_height, data_path+dir_mask)
+
 #========================================= Visualize Result ===========================================
 def show_predictions(k, gen, model, class_names=['Background', 'Broccoli']):
 	"""Debugging method to show k (<=batch_size) random inputs and its corresponding model output."""
 	[color_ims, height_ims], [labels, masks] = next(gen)
 	[pred_labs, pred_masks] = model.predict([color_ims, height_ims])
-	hard_masks = processing.clean_up_pred_masks(pred_masks)
+	hard_masks = proc.clean_up_pred_masks(pred_masks)
 	for i in range(k):
 		f, axs = plt.subplots(2,3, figsize=(4,4))
 		(ax1, ax2, ax3, ax4, ax5, ax6) = axs.flatten()
@@ -423,13 +459,14 @@ if __name__ == "__main__":
 	# model = load_separate('Unified CNNs/broccoli_unified_v5_141119_v3')
 	model = create_network_v5()
 
-	gen = init_data_generator(master_dir, model)
+	# gen = init_data_generator(master_dir, model)
+	gen = init_data_generator_prep(master_dir, model)
 
 	compile_model(model, mask_loss_weight=0.75)
 
-	model.fit_generator(gen, epochs=6, steps_per_epoch=256)
+	model.fit_generator(gen, epochs=1, steps_per_epoch=256)
 
-	model_name = 'Unified CNNs/broccoli_unified_v5_151119'
+	model_name = 'Unified CNNs/broccoli_unified_v5_151119_prepped'
 	model.save(model_name+'.h5')
 	save_separate(model, model_name)
 

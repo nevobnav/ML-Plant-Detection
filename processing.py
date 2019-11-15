@@ -43,7 +43,10 @@ def dark_hotspots(im, sigma=6, padding=0, m=2):
 
 # ========================================= Pre-Processing ==============================================
 def cielab(array):
-	return skimage.color.rgb2lab(array)
+	if len(array.shape)[-1] == 3:
+		return skimage.color.rgb2lab(array)
+	else:
+		return array
 
 def apply_preprocessing(input_tensor, function=None):
 	processed_tensor = np.zeros(input_tensor.shape)
