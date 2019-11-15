@@ -182,7 +182,7 @@ def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_backgr
 			crop_output, bg_output = run_on_block(c_im, h_im, padding=box_size)
 		except Exception as e:
 			print('Discarded all crops somewhere in pipeline while processing block ({},{})'.format(i,j))
-			print('Exception raised: "{}"\n'.format(e))
+			print('Exception raised: "{}" in line {}\n'.format(e, traceback.format_exc().split(',')[1].split(' ')[-1]))
 			continue
 
 		contours, centroids, boxes, confidence  = crop_output
