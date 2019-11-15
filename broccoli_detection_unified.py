@@ -147,7 +147,7 @@ def run_on_block(c_im, h_im, padding=0, get_background=False):
 	input_RGB, input_DEM = fill_data_tensor(c_im, h_im, c_rects, h_rects)
 
 	# --------
-	input_RGB = processing.apply_preprocessing(input_RGB, function=processing.cielab)
+	input_RGB = proc.apply_preprocessing(input_RGB, function=proc.cielab)
 	# --------
 
 	predictions, masks = network.predict([input_RGB, input_DEM], verbose=1)							# run classification model
