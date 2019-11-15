@@ -173,7 +173,7 @@ def remove_unconnected_components(masks):
 			masks[i,:,:] = labelled_mask==n
 	return masks
 
-def clean_up_pred_masks(masks, sigma=2):
+def get_hard_masks(masks, sigma=2):
 	"""Smooths each mask by applying a Gaussian filter with std. dev. sigma, and subsequently
 	removes smaller blobs from the mask using the function remove_unconnected_components"""
 	new_masks = np.zeros(masks.shape)
@@ -209,8 +209,8 @@ def find_contours(rects, masks):
 			contours.append(rel_cnt)
 			idxs.append(i)
 		except IndexError:
-			continue
-	return contours, idxs
+			contours.append(np.array([0,0],[0,w],[h,w],[h,0]))
+	return contours
 
 def find_centroids(rects, masks):
 	"""Computes the centroids of each mask in masks. Returns an (N,2) numpy array, where each slice

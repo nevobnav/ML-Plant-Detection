@@ -61,69 +61,6 @@ elif platform == 'windows':
 		network = windows_load(params['model_path'].replace('h5','json').replace('/', r'\\'))
 
 #============================================ Model functions ===============================================
-def create_boxes(c_coords):
-	h_size = int(np.round(dem_scale_factor*box_size))
-	h_coords = np.round(dem_scale_factor*c_coords).astype(int) 									# convert to DEM row/col
-	c_rects = np.zeros((c_coords.shape[0], 4), dtype=int)
-	h_rects = np.zeros((h_coords.shape[0], 4), dtype=int)
-	c_rects[:,0] = c_coords[:,1] - box_size//2
-	c_rects[:,1] = c_coords[:,0] - box_size//2
-	c_rects[:,2] = box_size
-	c_rects[:,3] = box_size
-	h_rects[:,0] = h_coords[:,1] - h_size//2
-	h_rects[:,1] = h_coords[:,0] - h_size//2
-	h_rects[:,2] = h_size
-	h_rects[:,3] = h_size
-	return c_rects, h_rects
-
-def fill_data_tensor(c_im, h_im, c_rects, h_rects):
-	num_candidates = c_rects.shape[0]
-	c_crops = np.zeros((num_candidates, c_box[0], c_box[1], 3), dtype=np.uint8)		# initialize tensors
-	h_crops = np.zeros((num_candidates, h_box[0], h_box[1], 1), dtype=np.uint8)
-	for i in range(num_candidates):
-		x_c, y_c, w_c, h_c = c_rects[i,:]
-		x_h, y_h, w_h, h_h = h_rects[i,:]
-		c_crop = np.copy(c_im[y_c : y_c+h_c, x_c : x_c+w_c, :]).astype(np.uint8)
-		h_crop = np.copy(h_im[y_h : y_h+h_h, x_h : x_h+w_h]).astype(np.uint8)
-		try:
-			c_crop = cv2.resize(c_crop, (c_box[0], c_box[1]))
-			h_crop = cv2.resize(h_crop, (h_box[0], h_box[1]))
-			c_crops[i,:,:,:] = c_crop
-			h_crops[i,:,:,0] = h_crop
-		except:
-			raise IndexError('cropping failed with c_rect = ({}, {}, {}, {}), h_rect=({}, {}, {}, {})'.format(x_c, y_c, w_c, h_c, x_h, y_h, w_h, h_h))
-	return c_crops, h_crops
-
-def run_on_block(c_im, h_im, padding=0, get_background=False):
-	"""Run complete model on the block c_im and its corresponding height block h_im."""
-	if c_im.mean() <= 1e-6:		# black part
-		raise IndexError
-	c_coords = proc.green_hotspots(c_im, sigma=sigma, padding=padding)							# run region proposer
-	c_rects, h_rects = create_boxes(c_coords)
-	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
-
-	predictions, masks = network.predict([c_crops, h_crops], verbose=1)							# run classification model
-	masks = masks[...,0]
-	crop_idxs = proc.get_class_idxs(predictions, 1)
-	boxes, confidence, masks = c_rects[crop_idxs], predictions[crop_idxs], masks[crop_idxs]
-	boxes, (confidence, masks) = proc.non_max_suppression(boxes, other=[confidence, masks], t=overlap_threshold)
-	masks = proc.clean_up_pred_masks(masks)
-
-	if filter_empty_masks:
-		masks, boxes, [confidence] = proc.discard_empty(masks, boxes, other=[confidence], t=crop_size_threshold)
-
-	print(len(masks))
-	contours, idxs = proc.find_contours(boxes, masks)
-	print(len(idxs))
-	boxes, confidence, masks = boxes[idxs], confidence[idxs], masks[idxs]
-	centroids = proc.find_centroids(boxes, masks)
-
-	if get_background:
-		background_boxes, background_confidence = proc.get_class(c_rects, predictions, 0)
-		return contours, centroids, confidence, boxes, background_boxes, background_confidence
-	else:
-		return contours, centroids, confidence, boxes
-
 def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 	"""For every block, determine if it is valid by checking whether it intersects with the field specified by clp_path.
 	Returns a dictionary of the form (i,j) : (i_ad, j_ad, height, width), where (i,j) is the index of a valid block,
@@ -162,48 +99,102 @@ def get_valid_blocks(block_size, block_overlap=box_size, max_count=np.infty):
 	print('Found {} valid blocks of a total of {}'.format(len(valid_blocks), (num_rows+1)*(num_cols+1)))
 	return valid_blocks
 
+def create_boxes(c_coords):
+	h_size = int(np.round(dem_scale_factor*box_size))
+	h_coords = np.round(dem_scale_factor*c_coords).astype(int) 									# convert to DEM row/col
+	c_rects = np.zeros((c_coords.shape[0], 4), dtype=int)
+	h_rects = np.zeros((h_coords.shape[0], 4), dtype=int)
+	c_rects[:,0] = c_coords[:,1] - box_size//2
+	c_rects[:,1] = c_coords[:,0] - box_size//2
+	c_rects[:,2] = box_size
+	c_rects[:,3] = box_size
+	h_rects[:,0] = h_coords[:,1] - h_size//2
+	h_rects[:,1] = h_coords[:,0] - h_size//2
+	h_rects[:,2] = h_size
+	h_rects[:,3] = h_size
+	return c_rects, h_rects
+
+def fill_data_tensor(c_im, h_im, c_rects, h_rects):
+	num_candidates = c_rects.shape[0]
+	c_crops = np.zeros((num_candidates, c_box[0], c_box[1], 3), dtype=np.uint8)		# initialize tensors
+	h_crops = np.zeros((num_candidates, h_box[0], h_box[1], 1), dtype=np.uint8)
+	for i in range(num_candidates):
+		x_c, y_c, w_c, h_c = c_rects[i,:]
+		x_h, y_h, w_h, h_h = h_rects[i,:]
+		c_crop = np.copy(c_im[y_c : y_c+h_c, x_c : x_c+w_c, :]).astype(np.uint8)
+		h_crop = np.copy(h_im[y_h : y_h+h_h, x_h : x_h+w_h]).astype(np.uint8)
+		try:
+			c_crop = cv2.resize(c_crop, (c_box[0], c_box[1]))
+			h_crop = cv2.resize(h_crop, (h_box[0], h_box[1]))
+			c_crops[i,:,:,:] = c_crop
+			h_crops[i,:,:,0] = h_crop
+		except:
+			raise IndexError('cropping failed with c_rect = ({}, {}, {}, {}), h_rect=({}, {}, {}, {})'.format(x_c, y_c, w_c, h_c, x_h, y_h, w_h, h_h))
+	return c_crops, h_crops
+
+def run_on_block(c_im, h_im, padding=0, get_background=False):
+	"""Run complete model on the block c_im and its corresponding height block h_im."""
+	if c_im.mean() <= 1e-6:		# black part
+		raise IndexError
+
+	c_coords = proc.green_hotspots(c_im, sigma=sigma, padding=padding)							# run region proposer
+	c_rects, h_rects = create_boxes(c_coords)
+	c_crops, h_crops = fill_data_tensor(c_im, h_im, c_rects, h_rects)
+
+	predictions, masks = network.predict([c_crops, h_crops], verbose=1)							# run classification model
+	masks = masks[...,0]
+	crop_idxs = proc.get_class_idxs(predictions, 1)
+	boxes, [confidence, masks] = c_rects[crop_idxs], [predictions[crop_idxs], masks[crop_idxs]]
+	boxes, [confidence, masks] = proc.non_max_suppression(boxes, other=[confidence, masks], t=overlap_threshold)
+	masks = proc.get_hard_masks(masks)
+
+	if filter_empty_masks:
+		masks, boxes, [confidence] = proc.discard_empty(masks, boxes, other=[confidence], t=crop_size_threshold)
+
+	contours  = proc.find_contours(boxes, masks)
+	centroids = proc.find_centroids(boxes, masks)
+
+	if get_background:
+		background_boxes, background_confidence = proc.get_class(c_rects, predictions, 0)
+		return [contours, centroids, boxes, confidence], [background_boxes, background_confidence]
+	else:
+		return [contours, centroids, boxes, confidence], [[],[]]
+
 def run_model(block_size, block_overlap=box_size, max_count=np.infty, get_background=False):
 	"""Perform model on img_path by dividing it into blocks."""
 	valid_blocks = get_valid_blocks(block_size, block_overlap=block_overlap, max_count=max_count)
 	print(valid_blocks.keys())
 	# valid_blocks = {(1,4):valid_blocks[(1,4)], (1,5):valid_blocks[(1,5)]}#, (10,23):valid_blocks[(10,23)]}
 
-	data_dict = dict()
-	if get_background:
-		background_dict = dict()
+	crop_dict = dict()
+	bg_dict = dict()
 
 	for (i,j) in valid_blocks:
-		i_ad, j_ad, height, width = valid_blocks[(i,j)]
-		c_im, h_im = get_block(i_ad, j_ad, height, width)
-		if height<=2*block_overlap or width<=2*block_overlap:					# block too small to incorporate overlap
-			continue
+		c_im, h_im = get_block(*valid_blocks[(i,j)])
 
 		try:
-			if get_background:
-				contours, centroids, confidence, boxes, background_boxes, background_confidence\
-							 = run_on_block(c_im, h_im, padding=box_size, get_background=get_background)
-			else:
-				contours, centroids, confidence, boxes = run_on_block(c_im, h_im, padding=box_size)
-		except:
-			print('No crops found in block ({},{})'.format(i,j))
+			crop_output, bg_output = run_on_block(c_im, h_im, padding=box_size)
+		except Exception as e:
+			print('Discarded all crops somewhere in pipeline while processing block ({},{})'.format(i,j))
+			print('Exception raised:', e)
 			continue
 
-		data_dict[(i,j)] = {'contours'  : contours,
-							'centroids' : centroids,
-							'block'		: (i_ad, j_ad, height, width),
-							'confidence': confidence,
-							'boxes'		: boxes}
-		if get_background:
-			background_dict[(i,j)] = {'background_boxes': background_boxes,
-									  'background_confidence':background_confidence,
-									  'block'		: (i_ad, j_ad, height, width)}
+		contours, centroids, boxes, confidence  = crop_output
+		background_boxes, background_confidence = bg_output
+
+		crop_dict[(i,j)] = {'contours'   : contours,
+							'centroids'  : centroids,
+							'boxes'		 : boxes,
+							'confidence' : confidence,
+							'block'		 : (i_ad, j_ad, height, width)}
+
+		bg_dict[(i,j)] = {'background_boxes'	  : background_boxes,
+						  'background_confidence' :	background_confidence,
+						  'block'				  : (i_ad, j_ad, height, width)}
 
 		print('Added {} crops to block ({},{})\n'.format(len(contours), i, j))
 
-	if get_background:
-		return data_dict, background_dict
-	else:
-		return data_dict
+	return crop_dict, bg_dict
 
 def remove_duplicates(center_centroids, center_contours, other_centroids, shift):
 	picks = []
@@ -219,37 +210,37 @@ def remove_duplicates(center_centroids, center_contours, other_centroids, shift)
 	else:
 		return center_centroids, center_contours
 
-def process_overlap(data_dict, block_overlap):
+def process_overlap(crop_dict, block_overlap):
 	"""Uses KDTree to remove duplicates in overlapping regions between two adjacent blocks."""
-	for (i,j) in data_dict.keys():
-		contours  = data_dict[(i,j)]['contours']
-		centroids = data_dict[(i,j)]['centroids']
-		(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
+	for (i,j) in crop_dict.keys():
+		contours  = crop_dict[(i,j)]['contours']
+		centroids = crop_dict[(i,j)]['centroids']
+		(i_ad, j_ad, height, width) = crop_dict[(i,j)]['block']
 
-		if j>0 and (i,j-1) in data_dict and len(centroids)>0:											# check against east block for duplicates
-			centroids_e = data_dict[(i,j-1)]['centroids']
-			width_e     = data_dict[(i,j-1)]['block'][3]
+		if j>0 and (i,j-1) in crop_dict and len(centroids)>0:											# check against east block for duplicates
+			centroids_e = crop_dict[(i,j-1)]['centroids']
+			width_e     = crop_dict[(i,j-1)]['block'][3]
 			shift_e = (width_e-2*block_overlap, 0)
 			centroids, contours = remove_duplicates(centroids, contours, centroids_e, shift_e)
 
-		if i>0 and (i-1,j) in data_dict and len(centroids)>0:											# check against north block for duplicates
-			centroids_n = data_dict[(i-1,j)]['centroids']
-			height_n    = data_dict[(i-1,j)]['block'][2]
+		if i>0 and (i-1,j) in crop_dict and len(centroids)>0:											# check against north block for duplicates
+			centroids_n = crop_dict[(i-1,j)]['centroids']
+			height_n    = crop_dict[(i-1,j)]['block'][2]
 			shift_n = (0, height_n-2*block_overlap)
 			centroids, contours = remove_duplicates(centroids, contours, centroids_n, shift_n)
 
-		if i>0 and j>0 and (i-1,j-1) in data_dict and len(centroids)>0:									# check against north-east block for duplicates
-			centroids_ne = data_dict[(i-1,j-1)]['centroids']
-			height_ne    = data_dict[(i-1,j-1)]['block'][2]
-			width_ne     = data_dict[(i-1,j-1)]['block'][3]
+		if i>0 and j>0 and (i-1,j-1) in crop_dict and len(centroids)>0:									# check against north-east block for duplicates
+			centroids_ne = crop_dict[(i-1,j-1)]['centroids']
+			height_ne    = crop_dict[(i-1,j-1)]['block'][2]
+			width_ne     = crop_dict[(i-1,j-1)]['block'][3]
 			shift_ne = (width_ne-2*block_overlap, height_ne-2*block_overlap)
 			centroids, contours = remove_duplicates(centroids, contours, centroids_ne, shift_ne)
 
-		data_dict[(i,j)]['contours']  = contours 						# update contours & centroids
-		data_dict[(i,j)]['centroids'] = centroids
+		crop_dict[(i,j)]['contours']  = contours 						# update contours & centroids
+		crop_dict[(i,j)]['centroids'] = centroids
 		print('Removed duplicates from block ({},{})'.format(i,j))
 	print()
-	return data_dict
+	return crop_dict
 
 #============================================ Output writer ===============================================
 def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=np.infty, filter_edges=True, get_background=False):
@@ -259,6 +250,7 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	The input tif is divided into overlapping blocks of size block_size+2*block_overlap.
 	Duplicates in the overlap region are removed using KDTrees. The parameter max_count is included for debug purposes;
 	the process is terminated after max_count blocks."""
+
 	field_shape = fiona.open(clp_path)
 	field_polygons = []
 	for feature in field_shape:
@@ -266,12 +258,8 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 		field_polygons.append(poly)
 	field = MultiPolygon(field_polygons)
 
-	output = run_model(block_size, block_overlap, max_count=max_count, get_background=get_background)
-	if get_background:
-		data_dict, background_dict = output
-	else:
-		data_dict = output
-	data_dict = process_overlap(data_dict, block_overlap)
+	crop_dict, bg_dict = run_model(block_size, block_overlap, max_count=max_count, get_background=get_background)
+	crop_dict = process_overlap(crop_dict, block_overlap)
 
 	schema_lines = { 'geometry': 'Polygon', 'properties': { 'name': 'str' } }
 	schema_pnt   = { 'geometry': 'Point',   'properties': { 'name': 'str' , 'confidence':'float'} }
@@ -281,22 +269,22 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 		with fiona.collection(out_dir+'POINTS.shp', "w", "ESRI Shapefile", schema_pnt, crs=from_epsg(4326)) as output_pnt:
 			with fiona.collection(out_dir+'BLOCK_LINES.shp', "w", "ESRI Shapefile", schema_lines, crs=from_epsg(4326)) as output_lines:
 
-				for (i,j) in data_dict:
-					contours  = data_dict[(i,j)]['contours']
-					centroids = data_dict[(i,j)]['centroids']
-					probs 	  = data_dict[(i,j)]['confidence']
-					(i_ad, j_ad, height, width) = data_dict[(i,j)]['block']
+				for (i,j) in crop_dict:
+					contours  = crop_dict[(i,j)]['contours']
+					centroids = crop_dict[(i,j)]['centroids']
+					probs 	  = crop_dict[(i,j)]['confidence']
+					(i_ad, j_ad, height, width) = crop_dict[(i,j)]['block']
 
 					count = 0
 					for (k, cnt) in enumerate(contours):							# write contours
 						xs, ys = cnt[:,1] + j_ad, cnt[:,0] + i_ad
 						centroid = (centroids[k,0] + j_ad, centroids[k,1] + i_ad)
-						transformed_points   = Polygon([transform*(xs[l],ys[l]) for l in range(len(xs))])
+						transformed_contour  = Polygon([transform*(xs[l], ys[l]) for l in range(len(xs))])
 						transformed_centroid = Point(transform*centroid)
 						try:
-							if transformed_points.difference(field).is_empty or not filter_edges:			# if contour is complete enclosed in field
+							if transformed_contour.difference(field).is_empty or not filter_edges:			# if contour is complete enclosed in field
 								output_cnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
-							            		  'geometry': mapping(transformed_points)})
+							            		  'geometry': mapping(transformed_contour)})
 								output_pnt.write({'properties': { 'name': '({},{}): {}'.format(i, j, k), 'confidence':float(max(probs[k]))},
 								            	  'geometry': mapping(transformed_centroid)})
 								count += 1
@@ -314,13 +302,14 @@ def write_shapefiles(out_dir, block_size=500, block_overlap=box_size, max_count=
 	params['input_tif'] = img_path
 	params['input_dem'] = dem_path
 	params['input_clp'] = clp_path
-	data_dict['metadata'] = params
+	crop_dict['metadata'] = params
 
 	with open(out_dir+'DATA.pickle', 'wb') as file:
-		pickle.dump(data_dict, file)
+		pickle.dump(crop_dict, file)
+
 	if get_background:
 		with open(out_dir+'BG_DATA.pickle', 'wb') as bg_file:
-			pickle.dump(background_dict, bg_file)
+			pickle.dump(bg_dict, bg_file)
 
 	print('\nFinished!')
 
