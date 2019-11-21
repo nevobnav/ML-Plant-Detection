@@ -1,76 +1,113 @@
 #!/usr/bin/python3.6
 
+"""
+Script containing all external processing functions, such as region
+proposal methods, class sorting methods, contour extraction etc.
+"""
+
 import numpy as np
-# from pre_proc import mask_filter
 import cv2
-import tensorflow.keras.models as models
 from scipy.ndimage import filters
 from scipy.ndimage import measurements
 from skimage import measure
 import skimage.color
 from scipy.spatial import KDTree
-
-from shapely.geometry import Polygon, Point
-from scipy.spatial import Delaunay
 from skimage.feature import peak_local_max
 
 # ========================================= Region Proposal =============================================
 def green_hotspots(im, sigma=4, padding=0, m=2):
-	"""RoI generator based on local minima of (u+v)-channel."""
+	"""RoI generator based on green hotspots.
+
+	The input is first converted from RGB to YUV. Then the U and V channels
+	are added and smoothed with a Gaussian filter. The function peak_local_max
+	from scipy.spatial is used to find local minimi in the resulting array.
+
+	Arguments
+	---------
+	im : (?,?,3) numpy array
+		Input RGB image.
+	sigma : float (>0), optional
+		Gaussian filter smoothing parameter. Decreasing sigma will result in
+		more hotspots. The default value is 4 is a good starting point.
+	padding : int, optional
+		Width of boundary layer in which no hotspots will be detected. Keep at
+		roughly the box_size to prevent boxes from being clipped by block 
+		boundary. Default is 0.
+	m : int, optional
+		Size of minimum filter. Keep at the default of 2. 
+
+	Returns
+	-------
+	coords : (?,2) numpy array
+		Array containing coordinates of the green hotspots.
+	"""
+
 	if padding > 0:
 		im = im[padding:-padding, padding:-padding, :]
 	im_yuv = skimage.color.rgb2yuv(im)
 	im_filtered = im_yuv[:,:,1] + im_yuv[:,:,2]
 	im_filtered = filters.minimum_filter(im_filtered, m)
 	im_filtered = filters.gaussian_filter(im_filtered, sigma)
-	mask = peak_local_max(-im_filtered, indices=False)#, exclude_border=False)
+	mask = peak_local_max(-im_filtered, indices=False)
 	mask = np.logical_and(mask, im_filtered!=0)
 	coords = np.argwhere(mask==1)
 	return coords+padding
 
 def dark_hotspots(im, sigma=6, padding=0, m=2):
-	"""RoI generator based on local minima of (u+v)-channel."""
+	"""RoI generator based on dark hotspots.
+
+	Similar function to green_hotspots. Use this function to detect locations
+	of dark lettuce crops. It is based on local minima of the Y band of 
+	image converted to YUV.
+
+	Arguments
+	---------
+	im : (?,?,3) numpy array
+		Input RGB image.
+	sigma : float (>0), optional
+		Gaussian filter smoothing parameter. Decreasing sigma will result in
+		more hotspots. The default value is 6 is a good starting point.
+	padding : int, optional
+		Width of boundary layer in which no hotspots will be detected. Keep at
+		roughly the box_size to prevent boxes from being clipped by block 
+		boundary. Default is 0.
+	m : int, optional
+		Size of minimum filter. Keep at the default of 2. 
+
+	Returns
+	-------
+	coords : (?,2) numpy array
+		Array containing coordinates of the dark hotspots.
+	"""
 	if padding > 0:
 		im = im[padding:-padding, padding:-padding, :]
 	im_yuv = skimage.color.rgb2yuv(im)
-	im_filtered = im_yuv[:,:,0] # + im_yuv[:,:,2]
+	im_filtered = im_yuv[:,:,0]
 	im_filtered = filters.minimum_filter(im_filtered, m)
 	im_filtered = filters.gaussian_filter(im_filtered, sigma)
-	mask = peak_local_max(-im_filtered, indices=False)#, exclude_border=False)
+	mask = peak_local_max(-im_filtered, indices=False)
 	mask = np.logical_and(mask, im_filtered!=0)
 	coords = np.argwhere(mask==1)
 	return coords+padding
 
-# ========================================= Pre-Processing ==============================================
-def cielab(array):
-	if array.shape[-1] == 3:
-		y = skimage.color.rgb2lab(array)
-		y[:,:,1:] += 128
-		return y.astype(np.uint8)
-	else:
-		return array
-
-def apply_preprocessing(input_tensor, function=None):
-	processed_tensor = np.zeros(input_tensor.shape)
-	for (k, array) in enumerate(input_tensor):
-		processed_tensor[k,...] = function(array)
-	return processed_tensor
-
 # =========================================== Box filters ===============================================
-def multi_class_sort(rects, predictions, bg_index=0):
-	"""Sorts each box in rects into its class as predicted by the array predictions. Returns a tuple of the
-	form ((rects_i, probs_i), ...), where probs contains the probability of the corresponding box belonging to class i."""
-	num_classes = predictions.shape[1]
-	num_candidates = predictions.shape[0]
-	indeces = [[] for k in range(num_classes)]
-	for i in range(num_candidates):
-		pred_index = np.argmax(predictions[i,:])
-		indeces[pred_index].append(i)
-	sorted_rects = [(rects[indeces[pred_index],:], predictions[indeces[pred_index], pred_index]) \
-									for pred_index in range(num_classes) if pred_index!=bg_index]
-	return tuple(sorted_rects)
-
 def get_class_idxs(predictions, class_index):
+	"""Get indeces of boxes belonging to class.
+
+	Arguments
+	---------
+	predictions : (N,num_classes) numpy array
+		Array containing confidence scores of a box belonging to class.
+	class_index : int
+		Index of class, should be either 0, 1, ..., num_classes-1.
+
+	Returns
+	-------
+	idxs : list
+		List containing indeces of elements belonging to class given by
+		class_index
+	"""
+
 	num_candidates = predictions.shape[0]
 	idxs = []
 	for i in range(num_candidates):
@@ -79,25 +116,28 @@ def get_class_idxs(predictions, class_index):
 			idxs.append(i)					# store index belonging to predicted broccoli
 	return idxs
 
-def get_class(rects, predictions, class_index):
-	"""Returns boxes and confidence arrays of a single class, specified by class_index."""
-	num_candidates = predictions.shape[0]
-	idxs = []
-	boxes, probs = [], []
-
-	for i in range(num_candidates):
-		pred_index = np.argmax(predictions[i,:])		# prediction index corresponds to label name
-		if pred_index == class_index:
-			idxs.append(i)					# store index belonging to predicted broccoli
-			boxes.append(rects[i,:])
-			probs.append(predictions[i, pred_index])
-
-	return np.array(boxes), np.array(probs)
-
 def non_max_suppression(boxes, other=[], t=0.2):
-	"""Non-Max-Suppresion algorithm. boxes is an (N,4)-numpy array, where N is the number of boxes.
-	One row of the array boxes should be of the form [x, y, w, h], where (x,y) is the lower left
-	edge of the box, w its width and h its height."""
+	"""Non-Max-Suppresion algorithm. 
+
+	Arguments
+	---------
+	boxes : (N,4) numpy array
+		Array containin box locations and dimensions, each rows is
+		of the form [x, y, w, h].
+	other : list, optional
+		List containing other objects of length N, from which elements
+		must also be removed. Default is [].
+	t : float (in [0,1])
+		Intersection over Union (IoU) threshold. Boxes that have a bigger
+		overlap than t are removed.
+
+	Returns
+	-------
+	new_boxes : (N*,4) numpy array
+		Array containing boxes which have not been removed, note N*<=N.
+	if other!=[], also returns a list of filtered objects in other.
+	"""
+
 	pick = []										# list containing indeces of boxes that we want to keep
 	x1 = boxes[:,0]									# x1 = x
 	y1 = boxes[:,1]									# y1 = y
@@ -123,26 +163,22 @@ def non_max_suppression(boxes, other=[], t=0.2):
 		return boxes[pick]
 
 # ======================================= Masking Functions ===========================================
-def get_masks(rects, c_im, model, verbose=1):
-	"""Computes mask for each box in rects using a FCN given by pre-loaded model.
-	Returns a (N, w, h) tensor, where each slice [i,:,:] is a binary image, and N is the length of rects."""
-	input_tensor = np.zeros((rects.shape[0], 64, 64, 3), dtype=np.uint8)
-	for (i, rect) in enumerate(rects):
-		x, y, w, h = rect
-		x1, x2 = max(x, 0), min(x+w, c_im.shape[1])					# pad box
-		y1, y2 = max(y, 0), min(y+h, c_im.shape[0])
-		crop = c_im[y1:y2, x1:x2, :].astype(np.uint8)
-		input_tensor[i, :, :, :] = cv2.resize(crop, (64,64))
-	predictions = model.predict(input_tensor, verbose=verbose)[:,:,:,0]>0.5
-	w, h = rects[0,2], rects[0,3]
-	masks = np.zeros((predictions.shape[0], w, h))
-	for (i, mask) in enumerate(predictions):
-		masks[i,...] = cv2.resize(predictions[i,...].astype(np.uint8), (w,h))
-	return masks
-
 def discard_empty(masks, rects, other=[], t=0.01):
-	"""Discards rectangles which are nearly empty. The parameter t determines the minimum amount of the
-	box that should be filled as a fraction of the total area."""
+	"""Discards boxes which are nearly empty.
+
+	Arguments
+	---------
+	masks : (N,?,?) numpy array
+		Tensor containing masks.
+	rects : (N, 4) numpy array
+		Array containing box locations and dimensions.
+	other : list
+		List containing other arrays of length N that should be filtered.
+	t : float (in [0,1])
+		Area ratio threshold. If area of mask is smaller thant*box_area,
+		discard it.
+	"""
+
 	crop_areas = np.sum(np.sum(masks, axis=2), axis=1)#[:,0]
 	is_almost_empty = crop_areas < t*rects[:,2]*rects[:,3]
 	filtered_masks = np.array([elt for (i,elt) in enumerate(masks) if not is_almost_empty[i]])
@@ -154,43 +190,25 @@ def discard_empty(masks, rects, other=[], t=0.01):
 	else:
 		return filtered_masks, filtered_rects
 
-def recenter_boxes(rects, masks, d=0.1):
-	"""If the (relative) distance from box center to mask centroid is greater than d, move box such that centroid
-	is its new center."""
-	mask_size = rects[0,2]				# box_size
-	xs = np.linspace(0,1,mask_size)
-	ys = np.linspace(0,1,mask_size)
-	altered = []
-	for i in range(rects.shape[0]):
-		mask = masks[i,:]
-		x, y, w, h = rects[i,:]
-		char_len = min(w, h)
-		area = mask.sum()
-		xc = np.sum(xs*mask)/area 		# centroid relative to box
-		yc = np.sum(ys*mask.T)/area
-		if (xc-0.5)**2 + (yc-0.5)**2 >= d**2:
-			rects[i,0] = x + int((xc-0.5)*w)
-			rects[i,1] = y + int((yc-0.5)*h)
-			altered.append(i)
-	return rects, altered
-
-def remove_unconnected_components(masks):
-	"""If mask consists of multiple components, only retain the component with maximum area, and
-	discard the others."""
-	for (i,mask) in enumerate(masks):
-		labelled_mask, num_components = measurements.label(mask)
-		areas = []
-		if num_components > 1:
-			for k in range(1, num_components+1):
-				area = (labelled_mask==k).sum()
-				areas.append(area)
-			n = np.argmax(areas)+1
-			masks[i,:,:] = labelled_mask==n
-	return masks
-
 def get_hard_masks(masks, sigma=2):
-	"""Smooths each mask by applying a Gaussian filter with std. dev. sigma, and subsequently
-	removes smaller blobs from the mask using the function remove_unconnected_components"""
+	"""Converts soft masks to hard, smoothed, singularly connected masks.
+
+	First smooths masks with Gaussian filter, then converts to binary (hard)
+	mask. Small unconnected components are removed.
+
+	Arguments
+	---------
+	masks : (N,?,?) numpy array
+		Tensor containing smooth masks.
+	sigma : float, optional
+		Smoothing parameter of Gaussian filter.
+
+	Returns
+	-------
+	hard_masks : (N,?,?) numpy array
+		Tensor containing generated hard masks.
+	"""
+
 	new_masks = np.zeros(masks.shape)
 	for (i, mask) in enumerate(masks):
 		mask = filters.gaussian_filter(mask, sigma)>0.5
@@ -207,11 +225,26 @@ def get_hard_masks(masks, sigma=2):
 	return new_masks
 
 def find_contours(rects, masks):
-	"""Finds contour around mask in each box in rects. Returns a list containing (N,2) numpy arrays.
-	Depending on the quality of the mask, no valid contours might be found. In this case, the box in
-	question is skipped. A list of indices is returned of all boxes that contain a valid contour."""
+	"""Finds contour around mask in each box in rects. 
+
+	If no contour can be generated due to the mask being of 
+	poor quality, a rectangular contour will be added.
+
+	Arguments
+	---------
+	rects : (N,4) numpy array
+		Array containing rectangles.
+	masks : (N,?,?) numpy array
+		Tensor containing masks. Each slice [i,:,:] is one mask.
+
+	Returns
+	-------
+	contours : list
+		List containing (K,2) numpy arrays, where the columns of 
+		each array represent the x- and y-coordinates of a contour.
+	"""
+
 	contours = []
-	idxs = []
 	for (i, rect) in enumerate(rects):
 		x, y, w, h = rect
 		mask = masks[i,...] # cv2.resize(masks[i,...], (w, h))
@@ -222,14 +255,29 @@ def find_contours(rects, masks):
 			rel_cnt[:,0] += y
 			rel_cnt[:,1] += x
 			contours.append(rel_cnt)
-			idxs.append(i)
 		except IndexError:
 			contours.append(np.array([0,0],[0,w],[h,w],[h,0]))
 	return contours
 
 def find_centroids(rects, masks):
-	"""Computes the centroids of each mask in masks. Returns an (N,2) numpy array, where each slice
-	[i,:] is a point (x,y)."""
+	"""Finds the centroid of each mask. 
+
+	If the mask is empty, the centroid will be placed in the 
+	middle of the box.
+
+	Arguments
+	---------
+	rects : (N,4) numpy array
+		Array containing rectangles.
+	masks : (N,?,?) numpy array
+		Tensor containing masks. Each slice [i,:,:] is one mask.
+
+	Returns
+	-------
+	centroids : (K,2) numpy arry
+		Each row represents one point.
+	"""
+
 	box_size = rects[0,2]
 	mask_width, mask_height = masks.shape[1], masks.shape[2]
 	centroids = np.zeros((masks.shape[0], 2))
@@ -247,24 +295,46 @@ def find_centroids(rects, masks):
 			centroids[i,:] = [x+xc/area, y+yc/area]
 	return centroids
 
-def remove_shifted_centroids(centroids, contours):
-	new_contours = []
-	idxs = []
-	for (k, cnt) in enumerate(contours):
-		center = Point((centroids[k,1], centroids[k,0]))
-		poly = Polygon([(cnt[j,0], cnt[j,1]) for j in range(cnt.shape[0])])
-		if poly.contains(center):
-			new_contours.append(cnt)
-			idxs.append(k)
-	return centroids[idxs], new_contours, idxs
+# ==================================== Overlapping Crops ========================================
+def remove_duplicates(center_centroids, center_contours, other_centroids, shift, min_distance):
+	"""Removes duplicate contours and centroids from center_contours and 
+	center_centroids.
 
-def remove_duplicates(center_centroids, center_contours, other_centroids, shift, overlap_distance=-1):
+	Uses KDTree to remove duplicates in overlapping regions between two 
+	adjacent blocks. The objects in the other block are shifted, This is 
+	necessary because all points are relative to their corresponding block.
+
+	Arguments
+	---------
+	center_centroids : (N,2) numpy array
+		Array containing points relative to the center block.
+	center_contours : list of length N
+		List with contours corresponding to points in center block.
+	other_centroids : (M,2) numpy array
+		Array containing points relative to other block.
+	shift : 2-tuple
+		Tuple of the form (w, h), such that w is added to the first component 
+		of each point in other_centroids, and h is added to the second component.
+	min_distance : float
+		Minimum distance between to centroids. If their distance is smaller,
+		remove the centroid and its corresponding contour from the center block.
+
+	Returns
+	-------
+	center_centroids : (N*,2) numpy array
+		Numpy array containing points which have not been removed, note that
+		N* <= N.
+	center_contours : list of length N*
+		List containing contours corresponding to the points which have not
+		been removed.
+	"""
+
 	picks = []
 	if len(other_centroids)>0:
 		picks = []
 		center_tree = KDTree(center_centroids)
 		other_tree  = KDTree(other_centroids-np.ones(other_centroids.shape)*shift)
-		q = center_tree.query_ball_tree(other_tree, overlap_distance)
+		q = center_tree.query_ball_tree(other_tree, min_distance)
 		for (k, neighbour_list) in enumerate(q):
 			if len(neighbour_list) < 1:
 				picks.append(k)
@@ -272,61 +342,69 @@ def remove_duplicates(center_centroids, center_contours, other_centroids, shift,
 	else:
 		return center_centroids, center_contours
 
-# ======================================= Experimental ===========================================
-def create_big_mask(c_im, rects, masks):
-	"""Creates a binary image (mask) of size c_im.shape that incorporates each mask in masks. Only use for
-	testing purposes, since overlapping masks are merged."""
-	big_mask = np.zeros((c_im.shape[0], c_im.shape[1]))
-	for i in range(rects.shape[0]):
-		x, y, w, h = rects[i,:]
-		mask = masks[i,...]
-		# reshaped_mask = cv2.resize(mask.astype(np.uint8), (w,h))
-		big_mask[y:y+h, x:x+w] = np.logical_or(mask, big_mask[y:y+h, x:x+w])
-	return big_mask
+def process_overlap(crop_dict, num_classes, block_overlap, min_distance):
+	"""Removes duplicates in each block.
 
-def find_contours_big(big_mask):
-	"""Finds the contours around each blob in big_mask. Returns a numpy array of shape (N, 2), where N
-	is the number of contours. Note that if two crops are overlapping, we get one contour for both crops."""
-	contours = measure.find_contours(big_mask, 0.5)
-	return contours
+	Iterates over all blocks in crop_dict, and removes duplicates with its
+	north, east and north-east neighbour blocks using the function remove_duplicates.
 
-def compute_mask_weirdness(big_mask, centroids):
-	labelled_big_mask, num_components = measurements.label(big_mask)
-	contours = []
-	ws = []
-	for i in range(1,num_components+1):
-		isolated_mask = (labelled_big_mask == i).astype(np.uint8)
-		cnt = measure.find_contours(isolated_mask, 0.5)
-		contours.append(cnt[0])
-		xs, ys = cnt[0][:,0], cnt[0][:,1]
-		poly = Polygon([(xs[i], ys[i]) for i in range(len(xs))])
-		L = poly.length
-		A = poly.area
-		ws.append(L)
-		print(A, L, ws[-1])
-	return labelled_big_mask, np.array(contours), ws
+	Arguments
+	---------
+	crop_dict : dict
+		Dictionary containing data for each block. It should have the same
+		structure as the attribute detected_crops of a Detector class.
+	block_overlap : int
+		Width of overlap region between two blocks.
+	min_distance : float
+		Minimum distance between to centroids. If their distance is smaller,
+		the centroid and its corresponding contour are removed.
 
-def triangulate(centroids):
-	tri = Delaunay(centroids)
-	return tri 					# to plot: ax.triplot(centroids[:,0], centroids[:,1], tri.simplices, color='w', lw=0.5)
+	Returns
+	-------
+	crop_dict : dict
+		Updated dictionary.
+	"""
 
+	for (i,j) in crop_dict.keys():
+		(i_ad, j_ad, height, width) = crop_dict[(i,j)]['block']
 
-if __name__ == "__main__":
-	N = 50
-	x = np.linspace(0,1,N)
-	X, Y = np.meshgrid(x,x)
-	M2 = (X-0.75)**2 + (Y-0.75)**2 < 0.1**2
-	M1 = (X-0.25)**2 + (Y-0.3)**2 < 0.2**2
-	M = np.logical_or(M1, M2)
-	masks = np.zeros((2,N,N))
-	masks[0,...] = M1
-	masks[1,...] = M
+		if j>0 and (i,j-1) in crop_dict:
+			width_e = crop_dict[(i,j-1)]['block'][3]
+			shift_e = (width_e-block_overlap, 0)
+			for class_idx in range(1, num_classes):
+				contours  = crop_dict[(i,j)][class_idx]['contours']
+				centroids = crop_dict[(i,j)][class_idx]['centroids']	
+				if len(centroids)>0:								# check against east block for duplicates
+					centroids_e = crop_dict[(i,j-1)][class_idx]['centroids']
+					centroids, contours = remove_duplicates(centroids, contours, centroids_e, shift_e, min_distance)
+					crop_dict[(i,j)][class_idx]['contours'] = contours
+					crop_dict[(i,j)][class_idx]['centroids'] = centroids
 
-	masks = remove_unconnected_components(masks)
+		if i>0 and (i-1,j) in crop_dict:											# check against north block for duplicates
+			height_n = crop_dict[(i-1,j)]['block'][2]
+			shift_n = (0, height_n-block_overlap)
+			for class_idx in range(1, num_classes):
+				contours  = crop_dict[(i,j)][class_idx]['contours']
+				centroids = crop_dict[(i,j)][class_idx]['centroids']
+				if len(centroids)>0:											# check against east block for duplicates
+					centroids_n = crop_dict[(i-1,j)][class_idx]['centroids']
+					centroids, contours = remove_duplicates(centroids, contours, centroids_n, shift_n, min_distance)
+					crop_dict[(i,j)][class_idx]['contours'] = contours
+					crop_dict[(i,j)][class_idx]['centroids'] = centroids
 
-	import matplotlib.pyplot as plt
-	plt.imshow(masks[1,...])
-	# for (i, cnt) in enumerate(cnts):
-	# 	plt.plot(cnt[:,1], cnt[:,0], 'w', lw=0.5)
-	# 	plt.text(cnt[:,1].mean(), cnt[:,0].mean(), '{:.3f}'.format(w[i]), ha='center')
-	plt.show()
+		if i>0 and j>0 and (i-1,j-1) in crop_dict:									# check against north-east block for duplicates
+			height_ne = crop_dict[(i-1,j-1)]['block'][2]
+			width_ne  = crop_dict[(i-1,j-1)]['block'][3]
+			shift_ne = (width_ne-block_overlap, height_ne-block_overlap)
+			for class_idx in range(1, num_classes):
+				contours  = crop_dict[(i,j)][class_idx]['contours']
+				centroids = crop_dict[(i,j)][class_idx]['centroids']
+				if len(centroids)>0:											# check against east block for duplicates
+					centroids_ne = crop_dict[(i-1,j-1)][class_idx]['centroids']
+					centroids, contours = remove_duplicates(centroids, contours, centroids_ne, shift_ne, min_distance)
+					crop_dict[(i,j)][class_idx]['contours'] = contours
+					crop_dict[(i,j)][class_idx]['centroids'] = centroids
+
+		print('Removed duplicates from block ({},{})'.format(i,j))
+
+	return crop_dict

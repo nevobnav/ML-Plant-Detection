@@ -1,126 +1,90 @@
-def get_settings(crop, **kwargs):
-	if crop.lower() == 'broccoli':
-		return BroccoliSettings(**kwargs).params
-	elif crop.lower() == 'lettuce':
-		return LettuceSettings(**kwargs).params
-	elif crop.lower() == 'broccoli_unified':
-		return BroccoliUnifiedSettings(**kwargs).params
+#!/usr/bin/python2.7
 
-class BroccoliSettings(object):
+"""
+This script contains classes which store detection settings for
+various different crops and model architectures.
+"""
+
+class DetectionSettings(object):
+	"""Base detection settings class. 
+
+	A child should implement the method parameters(), in which all 
+	necessary model parameters are stored.
+
+	Methods
+	-------
+	parameters()
+		Function that contains all default settings. It should define
+		the following attributes:
+		* box_size : int
+			Size of the bounding boxes in terms of RGB-pixels. Its value 
+			depends on the size of the crops. For broccoli, good default
+			values are 50 or 55. For lettuce, we recommend smaller boxes
+			such that there is less overlap; use 40 or 45.
+		* block_size : int
+			Size of the blocks in which the RGB tif is divided, in terms
+			of RGB-pixels. The bigger the blocks, the more data is loaded
+			in memory at once. For testing purposes, we recommend a value
+			of 500. On a GPU implementation, higher values like 2000 or
+			3000 can be used.
+		* block_overlap : int
+			Width of the overlap region between two adjacent blocks. Keep
+			at 3*box_size.
+		* overlap_threshold : float (in [0,1])
+			Minimum intersection over union (IoU) overlap between two
+			boxes in order for non-max-suppression to trigger. For 
+			broccoli detection, a good default setting is 0.4. For 
+			lettuce detection, use a higher value if crops are closer
+			together, we recommend around 0.6.
+		* crop_size_threshold : float (in [0,1])
+			Minimum percentage of bounding box that should be filled 
+			with crop mask. If it is lower, the crop is discarded. A 
+			good default value is 0.1. Higher value means more crops 
+			are discarded
+		* centroid_distance : int
+			Minimum distance in RGB pixels between two centroids of 
+			duplicate crops. If their distance is smaller, one of the crops
+			will be removed. For broccoli, a good default value is half
+			the box_size.
+		* sigma : float (>0)
+			Smoothing parameter in the region proposal step. Lower means 
+			more candidate bounding boxes are detected. For broccoli, good 
+			values are in the interval [3,6]. For lettuce we recommend 
+			slightly lower values.
+		* model_path : str (path object)
+			Path to stored network. Should not have a suffix. If the network 
+			is stored in the file /some/path/network.h5, set model_path
+			equal to '/some/path/network'.
+	"""
+
 	def __init__(self, **kwargs):
-		overlap_threshold 	= 0.4					# for broccoli, use 0.4, for lettuce, use 0.7
-		crop_size_threshold = 0.05					# 0.0 - 0.1, percentage of bounding box that should be filled with crop
-		center_distance 	= 0.05					# 0.0 - 0.5, relative distance a mask centroid can be from box center before the box is recentered.
-		overlap_distance    = 25					# minimum distance in pixels between two centroids
-		box_size = 55								# For broccoli, use 55-60, for lettuce, use 45-50. Must be even if >64
-		sigma = 5									# lower means more candidate bounding boxes are detected, good range is 2.5 - 7.5
-		filter_empty_masks 	= True
-		recenter 		= True
-		filter_disjoint = True
-		c_box = (60, 60)
-		h_box = (20, 20)
-		box_model_name  = 'Detection CNNs/CROP7+SAHN4_t5.h5'
-		mask_model_name = 'Masking CNNs/broccoli_masker_500.h5'
-		block_size = 500
-		block_overlap = int(1.5*box_size)
+		"""An attribute can be altered by adding it as a keyword argument
+		to the constructor."""
+		self.parameters()
+		self.allowed_keys = set(self.__dict__)
+		self.__dict__.update((key, val) for key, val in kwargs.items() if key in self.allowed_keys)
 
-		self.params = {
-				  'overlap_threshold':overlap_threshold,
-				  'crop_size_threshold':crop_size_threshold,
-				  'center_distance':center_distance,
-				  'overlap_distance':overlap_distance,
-				  'box_size':box_size,
-				  'sigma':sigma,
-				  'filter_empty_masks':filter_empty_masks,
-				  'recenter':recenter,
-				  'filter_disjoint':filter_disjoint,
-				  'c_box':c_box,
-				  'h_box':h_box,
-				  'detection_model_path':box_model_name,
-				  'masking_model_path':mask_model_name,
-				  'block_size':block_size,
-				  'block_overlap':block_overlap}
+	def __str__(self):
+		s= 'Settings(\n'+' '*5
+		for key in self.__dict__:
+			if key != 'allowed_keys':
+				s+='{:<20} : {:<20}\n'.format(key, self.__dict__[key])+' '*5
+		s = s+'   )'
+		return s
 
-		for kwarg in kwargs.keys():
-			self.params[kwarg] = kwargs[kwarg]
+	def parameters(self):
+		raise NotImplementedError
 
-class BroccoliUnifiedSettings(object):
-	def __init__(self, **kwargs):
-		overlap_threshold 	= 0.4					# for broccoli, use 0.4, for lettuce, use 0.7
-		crop_size_threshold = 0.1					# 0.0 - 0.1, percentage of bounding box that should be filled with crop
-		center_distance 	= 0.05					# 0.0 - 0.5, relative distance a mask centroid can be from box center before the box is recentered.
-		overlap_distance    = 25					# minimum distance in pixels between two centroids
-		box_size = 55								# For broccoli, use 55-60, for lettuce, use 45-50. Must be even if >64
-		sigma = 5									# lower means more candidate bounding boxes are detected, good range is 2.5 - 7.5
-		filter_empty_masks 	= True
-		recenter 		= True
-		filter_disjoint = True
-		c_box = (64, 64)
-		h_box = (16, 16)
-		# model_name = 'Unified CNNs/broccoli_unified_v5_141119_v2.h5'
-		model_name = 'Unified CNNs/broccoli_unified_v5_151119.h5'
-		block_size = 500
-		block_overlap = int(1.5*box_size)
+class BroccoliUnifiedSettings(DetectionSettings):
+	"""Settings to use for detecting broccoli crops using 
+	a unified network"""
 
-		self.params = {
-				  'overlap_threshold':overlap_threshold,
-				  'crop_size_threshold':crop_size_threshold,
-				  'center_distance':center_distance,
-				  'overlap_distance':overlap_distance,
-				  'box_size':box_size,
-				  'sigma':sigma,
-				  'filter_empty_masks':filter_empty_masks,
-				  'recenter':recenter,
-				  'filter_disjoint':filter_disjoint,
-				  'c_box':c_box,
-				  'h_box':h_box,
-				  'model_path':model_name,
-				  'block_size':block_size,
-				  'block_overlap':block_overlap}
-
-		for kwarg in kwargs.keys():
-			self.params[kwarg] = kwargs[kwarg]
-
-class LettuceSettings(object):
-	def __init__(self, **kwargs):
-		overlap_threshold 	= 0.4					# lower is stricter
-		crop_size_threshold = 0.05					# 0.0 - 0.1, percentage of bounding box that should be filled with crop
-		center_distance 	= 0.05					# 0.0 - 0.5, relative distance a mask centroid can be from box center before the box is recentered.
-		overlap_distance    = 20					# minimum distance in pixels between two centroids
-		box_size = 45								# For broccoli, use 55-60, for lettuce, use 45-50. Must be even if >64
-		sigma = 4									# lower means more candidate bounding boxes are detected, good range is 2.5 - 7.5
-		filter_empty_masks = True
-		recenter 		= True
-		filter_disjoint = True
-		c_box = (60, 60)
-		h_box = (20, 20)
-		box_model_name  = 'Detection CNNs/lettuce_ternary_v2.h5'
-		mask_model_name = 'Masking CNNs/lettuce_masker_350.h5'
-		mask_model_name_dark = 'Masking CNNs/lettuce_dark_masker_100.h5'
-		block_size = 500
-		block_overlap = int(1.5*box_size)
-
-		self.params = {
-				  'overlap_threshold':overlap_threshold,
-				  'crop_size_threshold':crop_size_threshold,
-				  'center_distance':center_distance,
-				  'overlap_distance':overlap_distance,
-				  'box_size':box_size,
-				  'sigma':sigma,
-				  'filter_empty_masks':filter_empty_masks,
-				  'recenter':recenter,
-				  'filter_disjoint':filter_disjoint,
-				  'c_box':c_box,
-				  'h_box':h_box,
-				  'detection_model_path':box_model_name,
-				  'masking_model_path':mask_model_name,
-				  'masking_model_path_dark':mask_model_name_dark,
-				  'block_size':block_size,
-				  'block_overlap':block_overlap}
-
-		for kwarg in kwargs.keys():
-			self.params[kwarg] = kwargs[kwarg]
-
-if __name__ == "__main__":
-	params = get_settings('broccoli', block_size=1200)
-	print(params)
+	def parameters(self):
+		self.overlap_threshold = 0.4
+		self.crop_size_threshold = 0.1					
+		self.centroid_distance = 25
+		self.box_size = 55
+		self.sigma = 5
+		self.model_path = '../Unified CNNs/Broccoli v4'
+		self.block_size = 500
+		self.block_overlap = 3*self.box_size
