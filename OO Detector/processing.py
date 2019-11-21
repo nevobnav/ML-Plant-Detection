@@ -12,7 +12,6 @@ from scipy.ndimage import measurements
 from skimage import measure
 import skimage.color
 from scipy.spatial import KDTree
-from shapely.geometry import Polygon, Point
 from skimage.feature import peak_local_max
 
 # ========================================= Region Proposal =============================================
@@ -91,35 +90,7 @@ def dark_hotspots(im, sigma=6, padding=0, m=2):
 	coords = np.argwhere(mask==1)
 	return coords+padding
 
-# ========================================= Pre-Processing ==============================================
-def cielab(array):
-	if array.shape[-1] == 3:
-		y = skimage.color.rgb2lab(array)
-		y[:,:,1:] += 128
-		return y.astype(np.uint8)
-	else:
-		return array
-
-def apply_preprocessing(input_tensor, function=None):
-	processed_tensor = np.zeros(input_tensor.shape)
-	for (k, array) in enumerate(input_tensor):
-		processed_tensor[k,...] = function(array)
-	return processed_tensor
-
 # =========================================== Box filters ===============================================
-# def multi_class_sort(rects, predictions, bg_index=0):
-# 	"""Sorts each box in rects into its class as predicted by the array predictions. Returns a tuple of the
-# 	form ((rects_i, probs_i), ...), where probs contains the probability of the corresponding box belonging to class i."""
-# 	num_classes = predictions.shape[1]
-# 	num_candidates = predictions.shape[0]
-# 	indeces = [[] for k in range(num_classes)]
-# 	for i in range(num_candidates):
-# 		pred_index = np.argmax(predictions[i,:])
-# 		indeces[pred_index].append(i)
-# 	sorted_rects = [(rects[indeces[pred_index],:], predictions[indeces[pred_index], pred_index]) \
-# 									for pred_index in range(num_classes) if pred_index!=bg_index]
-# 	return tuple(sorted_rects)
-
 def get_class_idxs(predictions, class_index):
 	"""Get indeces of boxes belonging to class.
 
@@ -144,21 +115,6 @@ def get_class_idxs(predictions, class_index):
 		if pred_index == class_index:
 			idxs.append(i)					# store index belonging to predicted broccoli
 	return idxs
-
-# def get_class(rects, predictions, class_index):
-# 	"""Returns boxes and confidence arrays of a single class, specified by class_index."""
-# 	num_candidates = predictions.shape[0]
-# 	idxs = []
-# 	boxes, probs = [], []
-
-# 	for i in range(num_candidates):
-# 		pred_index = np.argmax(predictions[i,:])		# prediction index corresponds to label name
-# 		if pred_index == class_index:
-# 			idxs.append(i)					# store index belonging to predicted broccoli
-# 			boxes.append(rects[i,:])
-# 			probs.append(predictions[i, pred_index])
-
-# 	return np.array(boxes), np.array(probs)
 
 def non_max_suppression(boxes, other=[], t=0.2):
 	"""Non-Max-Suppresion algorithm. 
@@ -207,23 +163,6 @@ def non_max_suppression(boxes, other=[], t=0.2):
 		return boxes[pick]
 
 # ======================================= Masking Functions ===========================================
-# def get_masks(rects, c_im, model, verbose=1):
-# 	"""Computes mask for each box in rects using a FCN given by pre-loaded model.
-# 	Returns a (N, w, h) tensor, where each slice [i,:,:] is a binary image, and N is the length of rects."""
-# 	input_tensor = np.zeros((rects.shape[0], 64, 64, 3), dtype=np.uint8)
-# 	for (i, rect) in enumerate(rects):
-# 		x, y, w, h = rect
-# 		x1, x2 = max(x, 0), min(x+w, c_im.shape[1])					# pad box
-# 		y1, y2 = max(y, 0), min(y+h, c_im.shape[0])
-# 		crop = c_im[y1:y2, x1:x2, :].astype(np.uint8)
-# 		input_tensor[i, :, :, :] = cv2.resize(crop, (64,64))
-# 	predictions = model.predict(input_tensor, verbose=verbose)[:,:,:,0]>0.5
-# 	w, h = rects[0,2], rects[0,3]
-# 	masks = np.zeros((predictions.shape[0], w, h))
-# 	for (i, mask) in enumerate(predictions):
-# 		masks[i,...] = cv2.resize(predictions[i,...].astype(np.uint8), (w,h))
-# 	return masks
-
 def discard_empty(masks, rects, other=[], t=0.01):
 	"""Discards boxes which are nearly empty.
 
@@ -250,40 +189,6 @@ def discard_empty(masks, rects, other=[], t=0.01):
 		return filtered_masks, filtered_rects, other
 	else:
 		return filtered_masks, filtered_rects
-
-# def recenter_boxes(rects, masks, d=0.1):
-# 	"""If the (relative) distance from box center to mask centroid is greater than d, move box such that centroid
-# 	is its new center."""
-# 	mask_size = rects[0,2]				# box_size
-# 	xs = np.linspace(0,1,mask_size)
-# 	ys = np.linspace(0,1,mask_size)
-# 	altered = []
-# 	for i in range(rects.shape[0]):
-# 		mask = masks[i,:]
-# 		x, y, w, h = rects[i,:]
-# 		char_len = min(w, h)
-# 		area = mask.sum()
-# 		xc = np.sum(xs*mask)/area 		# centroid relative to box
-# 		yc = np.sum(ys*mask.T)/area
-# 		if (xc-0.5)**2 + (yc-0.5)**2 >= d**2:
-# 			rects[i,0] = x + int((xc-0.5)*w)
-# 			rects[i,1] = y + int((yc-0.5)*h)
-# 			altered.append(i)
-# 	return rects, altered
-
-# def remove_unconnected_components(masks):
-# 	"""If mask consists of multiple components, only retain the component with maximum area, and
-# 	discard the others."""
-# 	for (i,mask) in enumerate(masks):
-# 		labelled_mask, num_components = measurements.label(mask)
-# 		areas = []
-# 		if num_components > 1:
-# 			for k in range(1, num_components+1):
-# 				area = (labelled_mask==k).sum()
-# 				areas.append(area)
-# 			n = np.argmax(areas)+1
-# 			masks[i,:,:] = labelled_mask==n
-# 	return masks
 
 def get_hard_masks(masks, sigma=2):
 	"""Converts soft masks to hard, smoothed, singularly connected masks.

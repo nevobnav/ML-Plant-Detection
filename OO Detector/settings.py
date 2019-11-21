@@ -85,6 +85,6 @@ class BroccoliUnifiedSettings(DetectionSettings):
 		self.centroid_distance = 25
 		self.box_size = 55
 		self.sigma = 5
-		self.model_path = '../Unified CNNs/broccoli_unified_v4'
+		self.model_path = '../Unified CNNs/Broccoli v4'
 		self.block_size = 500
 		self.block_overlap = 3*self.box_size

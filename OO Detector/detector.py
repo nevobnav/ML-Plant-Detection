@@ -19,81 +19,9 @@ import numpy as np
 import processing as proc
 from raster_functions import RasterCommunicator
 import settings
+from network import load_network, get_input_sizes, get_num_classes
 
 __author__ = "Duncan den Bakker"
-
-def load_network(path, platform):
-	"""Loads a neural network.
-
-	If platform=='linux', the model is loaded from a .h5 file using 
-	keras.models.load_model(path). If platform=='windows', the model
-	architecture is first loaded from a .json, achter which the 
-	weights are loaded separately.
-
-	Arguments
-	---------
-	path : str
-		Path to network. Should not have a suffix, so to load 
-		./network.h5, set path='./network'.
-	platform : str
-		OS, either linux or windows.
-	"""
-
-	if platform=='linux':
-		network = keras_models.load_model(path+'.h5')
-
-	elif platform == 'windows':
-		from keras.utils import CustomObjectScope
-		from keras.initializers import glorot_uniform
-		with CustomObjectScope({'GlorotUniform': glorot_uniform()}):
-			with open(path+'.json', 'r') as f:
-				json_string = f.read()
-				network = keras_models.model_from_json(json_string)
-				network.load_weights(path+'_weights.h5')
-
-	return network
-
-def get_input_sizes(network):
-	"""Returns the (spatial) sizes of the input layers of a network.
-
-	Arguments
-	---------
-	network : keras model
-		Keras model of which the input shapes need to be known.
-
-	Returns
-	-------
-	shapes : tuple
-		Tuple containing as many 2-tuples as there are input layers
-		in the network.
-	"""
-
-	shapes = []
-	for input_layer in network.input:
-		shape = input_layer.shape.as_list()
-		shapes.append((shape[1], shape[2]))
-	return tuple(shapes)
-
-def get_num_classes(network):
-	"""Returns the number of classes the network can detect.
-
-	Arguments
-	---------
-	network : keras model
-		Keras model of which the number of classes it can detect
-		is wanted.
-
-	Returns:
-	num_classes : int
-		Number of different classes the network can detect. If the
-		network is a binary detection network (crop vs. no crop), it
-		will return 2.
-	"""
-
-	for output in network.output:
-		if len(output.shape) == 2:
-			return output.shape[-1]
-
 
 class Detector(object):
 	"""
