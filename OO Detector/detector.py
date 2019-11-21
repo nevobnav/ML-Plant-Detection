@@ -333,7 +333,7 @@ class Detector(object):
 		added to prevent missing crops near block boundaries. This will lead 
 		to some crops being detected twice in neighbouring blocks. These 
 		duplicates must still be discarded using the method 
-		remove_overlapping_crops().
+		remove_duplicate_crops().
 
 		This method has no return value. The results of the detection algorithm
 		are stored in the dictionary attribute detected_crops.
@@ -377,7 +377,7 @@ class Detector(object):
 		self.detected_crops = detected_crops
 		self.bg_dict = bg_dict
 
-	def remove_overlapping_crops(self):
+	def remove_duplicate_crops(self):
 		"""Removes duplicates from overlapping regions.
 
 		This method calls the function process_overlap from the module 

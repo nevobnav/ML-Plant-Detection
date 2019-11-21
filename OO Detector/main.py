@@ -21,7 +21,17 @@ Settings = settings.BroccoliUnifiedSettings()
 D = Detector(rgb_path, dem_path, clp_path, Settings)
 
 D.detect(max_count=10)
-D.remove_overlapping_crops()
+D.remove_duplicate_crops()
 D.write_shapefiles()
 
 # On Windows
+rgb_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724-GR.tif"
+dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724_DEM-GR.tif"
+clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
+
+Settings = settings.BroccoliUnifiedSettings()
+D = Detector(rgb_path, dem_path, clp_path, Settings, platform='windows')
+
+D.detect(max_count=10)
+D.remove_duplicate_crops()
+D.write_shapefiles()
