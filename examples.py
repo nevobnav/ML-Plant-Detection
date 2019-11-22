@@ -10,6 +10,7 @@ import network
 import extractor
 
 def detect_example_linux():
+	"""Example of broccoli crop detection workflow on linux"""
 	name = 'c01_verdonk-Wever oost-201907240707'
 	GR = True
 	rgb_path = r"/home/duncan/Documents/VanBoven/Orthomosaics/"+name+GR*'-GR'+r'/'+name+GR*'-GR'+r".tif"
@@ -25,6 +26,7 @@ def detect_example_linux():
 	D.save_background_to_pickle('./Test Count')
 
 def detect_example_windows():
+	"""Example of broccoli crop detection workflow on windows"""
 	rgb_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724-GR.tif"
 	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724_DEM-GR.tif"
 	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
@@ -37,6 +39,7 @@ def detect_example_windows():
 	D.write_shapefiles()
 
 def network_train_example():
+	"""Example of training a broccoli network"""
 	data_path = '/home/duncan/Documents/VanBoven/DL Datasets/Unified Broccoli (NEW FORMAT)'
 
 	Trainer = network.NetworkTrainer(2)
