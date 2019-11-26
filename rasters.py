@@ -42,7 +42,7 @@ def clip_ortho2shp_array(input_file, clip_shp, nodata=None, out=''):
 	output_file = out
 	shape_path = clip_shp
 	shape_name = os.path.basename(clip_shp)[:-4]
-	input_object = gdal.Open(input_file)	
+	input_object = gdal.Open(input_file)
 	ds = gdal.Warp(output_file,
                    input_object,
                    format = 'VRT',
@@ -67,7 +67,7 @@ class RasterCommunicator(object):
 		Path to DEM file. Should point to either a .tif or .vrt file.
 	clip_path : str (or path object)
 		Path to clipped field file. Should point to a .shp file. The
-		shapefile should contain Polygons covering the part of the 
+		shapefile should contain Polygons covering the part of the
 		RGB file that should be analyzed.
 	rgb : rasterio.io.DatasetReader
 		Rasterio object from which RGB data can be read.
@@ -104,7 +104,7 @@ class RasterCommunicator(object):
 		Loads RGB and DEM files such that they can be accessed.
 
 		Clips the input RGB file according to the polygons in the clip
-		file. A temporary (hidden) file .tmp.vrt is created containing 
+		file. A temporary (hidden) file .tmp.vrt is created containing
 		clipped view of RGB file, using the function clip_ortho2shp_array.
 
 		Arguments
@@ -115,7 +115,7 @@ class RasterCommunicator(object):
 			Path to DEM file. Should point to either a .tif or .vrt file.
 		clip_path : str (or path object)
 			Path to clipped field file. Should point to a .shp file. The
-			shapefile should contain Polygons covering the part of the 
+			shapefile should contain Polygons covering the part of the
 			RGB file that should be analyzed.
 		"""
 
@@ -217,7 +217,7 @@ class RasterCommunicator(object):
 		-------
 		dem_block : (?,?) array
 			Numpy array containing DEM data of block. Typically of a
-			different (spatial) size as rgb_block due to resolution 
+			different (spatial) size as rgb_block due to resolution
 			differences between RGB and DEM files.
 		"""
 
@@ -248,13 +248,13 @@ class RasterCommunicator(object):
 			Numpy array containing RGB data of block.
 		dem_block : (?,?) array
 			Numpy array containing DEM data of block. Typically of a
-			different (spatial) size as rgb_block due to resolution 
+			different (spatial) size as rgb_block due to resolution
 			differences between RGB and DEM files.
 		"""
 
 		rgb_block = self.get_rgb_block(i_rgb, j_rgb, rows_rgb, cols_rgb)
 		dem_block = self.get_dem_block(i_rgb, j_rgb, rows_rgb, cols_rgb)
-		return rgb_block, dem_block 
+		return rgb_block, dem_block
 
 	def adjust_window(self, i_rgb, j_rgb, rows_rgb, cols_rgb):
 		"""
@@ -303,17 +303,17 @@ class RasterCommunicator(object):
 			blocks in terms of RGB-pixels. Used to prevent missing crops near
 			box boundaries. Typically set to 2 times the bounding box size.
 		max_count : int, optional
-			Maximum number of blocks to return. Default value is None, in this 
+			Maximum number of blocks to return. Default value is None, in this
 			case all the valid blocks are returned.
 
 		Returns
 		-------
 		valid_blocks : dict
-			Dictionary containing blocks that intersect the clipped field. Its 
+			Dictionary containing blocks that intersect the clipped field. Its
 			keys are tuples representing the block location within a grid. For
-			example, block (n,m-1) is the east neighbour of block (n,m). The 
-			corresponding value is a 4-tuple of the form (i, j, rows, cols), 
-			where (i,j) is the top left corner of the block, and rows, cols 
+			example, block (n,m-1) is the east neighbour of block (n,m). The
+			corresponding value is a 4-tuple of the form (i, j, rows, cols),
+			where (i,j) is the top left corner of the block, and rows, cols
 			are its height and width, all in terms of RGB-pixels.
 		"""
 
@@ -333,8 +333,10 @@ class RasterCommunicator(object):
 		count = 0
 		for i in range(0,rows_rgb+1):
 			for j in range(0,cols_rgb+1):
-				i_ad, j_ad, height, width = self.adjust_window(i*block_size-block_overlap//2, j*block_size-block_overlap//2,
-														   block_size+block_overlap, block_size+block_overlap)
+				i_ad, j_ad, height, width = self.adjust_window(i*block_size-block_overlap//2,
+				 											   j*block_size-block_overlap//2,
+														       block_size+block_overlap,
+															   block_size+block_overlap)
 				block_vertices = [(i_ad, j_ad), (i_ad+height, j_ad), (i_ad+height, j_ad+width), (i_ad, j_ad+width)]
 				transformed_vertices = geometry.Polygon([self.transform*(a,b) for (b,a) in block_vertices])
 
@@ -347,6 +349,10 @@ class RasterCommunicator(object):
 				if count >= max_count:
 					print('Found {} valid blocks of a total of {}'.format(len(valid_blocks), (rows_rgb+1)*(cols_rgb+1)))
 					return valid_blocks
+					
+		print('Found {} valid blocks of a total of {}'.format(len(valid_blocks), (rows_rgb+1)*(cols_rgb+1)))
+		return valid_blocks
+
 
 	def get_clip_polygons(self):
 		"""
@@ -360,5 +366,3 @@ class RasterCommunicator(object):
 			field_polygons.append(poly)
 		field = geometry.MultiPolygon(field_polygons)
 		return field
-
-

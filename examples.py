@@ -1,8 +1,10 @@
 #!/usr/bin/python3.6
 
 """
-Example usage of the detector, settings and network modules. 
+Example usage of the detector, settings and network modules.
 """
+
+from time import time
 
 import detector
 import settings
@@ -25,18 +27,23 @@ def detect_example_linux():
 	D.write_shapefiles('./Test Count')
 	D.save_background_to_pickle('./Test Count')
 
-def detect_example_windows():
+def detect_example_windows(n=10):
 	"""Example of broccoli crop detection workflow on windows"""
 	rgb_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724-GR.tif"
 	dem_path = r"D:\\Old GR\\c01_verdonk-Wever west-201907240724_DEM-GR.tif"
-	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Field Shapefiles\\c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
+	clp_path = r"C:\\Users\\VanBoven\\Documents\\DL Plant Count\\ML-Plant-Detection\\Clipped Fields\\c01_verdonk-Wever west-201907240724-GR_FIELD.shp"
 
-	Settings = settings.BroccoliUnifiedSettings()
+	t0 = time()
+	Settings = settings.BroccoliUnifiedSettings(block_size=2000)
 	D = detector.Detector(rgb_path, dem_path, clp_path, Settings, platform='windows')
-
-	D.detect(max_count=10)
+	t1 = time()
+	D.detect()
+	t2 = time()
 	D.remove_duplicate_crops()
-	D.write_shapefiles()
+	t3 = time()
+	D.write_shapefiles('./Test Count')
+	t4 = time()
+	print('{:9.3f}\n{:9.3f}\n{:9.3f}\n{:9.3f}\n{:9.3f}'.format(t1-t0, t2-t1, t3-t2, t4-t3, t4-t1))
 
 def network_train_example():
 	"""Example of training a broccoli network"""
@@ -58,30 +65,30 @@ def extraction_example():
 	input_centers  = r"./Test Count/POINTS.shp"
 	bg_pickle = r"./Test Count/BACKGROUND_DATA.pickle"
 
-	extractor.extract_data_from_shapefiles(contour_shapefile = input_contours, 
-								 point_shapefile = input_centers, 
-								 rgb_path = rgb_path, 
-								 dem_path = dem_path, 
-								 clip_path = clp_path, 
-								 box_size = 50, 
+	extractor.extract_data_from_shapefiles(contour_shapefile = input_contours,
+								 point_shapefile = input_centers,
+								 rgb_path = rgb_path,
+								 dem_path = dem_path,
+								 clip_path = clp_path,
+								 box_size = 50,
 								 class_id = 1,
-								 class_title = 'Broccoli', 
-								 target_dir = './Test Automatic Data', 
-								 max_count = 10, 
+								 class_title = 'Broccoli',
+								 target_dir = './Test Automatic Data',
+								 max_count = 10,
 								 min_conf = 0.6,
 								 filter_id = False)
 
-	extractor.extract_background_data(background_pickle = bg_pickle, 
-							rgb_path = rgb_path, 
-							dem_path = dem_path, 
-							clip_path = clp_path, 
-							box_size = 50, 
-							target_dir = './Test Automatic Data', 
-							max_count = 10, 
+	extractor.extract_background_data(background_pickle = bg_pickle,
+							rgb_path = rgb_path,
+							dem_path = dem_path,
+							clip_path = clp_path,
+							box_size = 50,
+							target_dir = './Test Automatic Data',
+							max_count = 10,
 							min_conf = 0.6)
 
 if __name__ == "__main__":
-	detect_example_linux()
-	# detect_example_windows()
+	# detect_example_linux()
+	detect_example_windows()
 	# network_train_example()
 	# extraction_example()
