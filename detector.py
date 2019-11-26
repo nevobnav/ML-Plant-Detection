@@ -1,7 +1,7 @@
 #!/usr/bin/python3.6
 
 """
-Script containing the Detector class, which implements the crop 
+Script containing the Detector class, which implements the crop
 detection algorithm.
 """
 
@@ -55,7 +55,7 @@ class Detector(object):
 		DEM tifs.
 	detected_crops : dict
 		Dictionary in which detection results are stored. It is initialized
-		by an empty dictionary. To fill it, run detection algorithm. After 
+		by an empty dictionary. To fill it, run detection algorithm. After
 		this is done, it will contain keys of the form (i,j), representing
 		the block. Each corresponding value is a dictionary containing the
 		blocks geometry and crops for each class id.
@@ -75,7 +75,7 @@ class Detector(object):
 	detect(self, max_count=np.infty, get_background=False)
 		Detection algorithm applied to whole input tif.
 	remove_overlaping_crops()
-		Removes crops that have been detected multiple times in 
+		Removes crops that have been detected multiple times in
 		overlap regions.
 	write_points(output_folder='./', filter_edge=True)
 		Writes only crop centroids to shapefile.
@@ -193,7 +193,7 @@ class Detector(object):
 
 		A short summary of the detection algorithm:
 		* First generate RoI's, and put boxes of a fixed size at these locations.
-		* Feed the data in the boxes through a combined classification and 
+		* Feed the data in the boxes through a combined classification and
 			masking network.
 		* Sort the results into crops and background.
 		* Apply post-processing to crop results, like non-max-suppression to
@@ -215,8 +215,8 @@ class Detector(object):
 		crop_output : list of length 4
 			List containing contours, centroids, boxes and confidence scores
 		bg_output : list of length 2
-			List containing background boxes and confidence scores. If 
-			get_background==False, this is a list containing two empty lists.	
+			List containing background boxes and confidence scores. If
+			get_background==False, this is a list containing two empty lists.
 		"""
 
 		if rgb_block.mean() <= 1e-6:
@@ -254,14 +254,14 @@ class Detector(object):
 		else:
 			return output, [[],[]]
 
-	def detect(self, max_count=np.infty, get_background=False):
+	def detect(self, max_count=None, get_background=False):
 		"""Apply detection algorithm to entire input file.
 
 		The RGB tif is divided into blocks of size self.Settings.block_size.
 		The detection algorithm is applied to each of these blocks. Overlap is
-		added to prevent missing crops near block boundaries. This will lead 
-		to some crops being detected twice in neighbouring blocks. These 
-		duplicates must still be discarded using the method 
+		added to prevent missing crops near block boundaries. This will lead
+		to some crops being detected twice in neighbouring blocks. These
+		duplicates must still be discarded using the method
 		remove_duplicate_crops().
 
 		This method has no return value. The results of the detection algorithm
@@ -271,7 +271,7 @@ class Detector(object):
 		---------
 		max_count : int, optional
 			For debugging purposes; only apply the detection algorithm to at
-			most max_count blocks. Default is np.infty, in which case all blocks
+			most max_count blocks. Default is None, in which case all blocks
 			are included.
 		get_background : bool, optional
 			Whether to store the boxes containing background. Default is False.
@@ -309,7 +309,7 @@ class Detector(object):
 	def remove_duplicate_crops(self):
 		"""Removes duplicates from overlapping regions.
 
-		This method calls the function process_overlap from the module 
+		This method calls the function process_overlap from the module
 		processing.py. The method has no return value, results are stored
 		in the dictionary attribute detected_crops.
 		"""
@@ -326,11 +326,11 @@ class Detector(object):
 		---------
 		output_folder : str (path object), optional
 			Folder in which to store the resulting shapefile POINTS.shp.
-			If folder does not exist, it will be created. Default is './', 
+			If folder does not exist, it will be created. Default is './',
 			which is the current directory.
 		filter_edges : bool, optional
 			Whether to remove crops which intersect the clipped field edge,
-			default is True. If the clipped field edge is not too close to 
+			default is True. If the clipped field edge is not too close to
 			any crops, we recommend keeping it at the default.
 		"""
 
@@ -343,7 +343,7 @@ class Detector(object):
 
 		clip_polygons = self.Rasters.get_clip_polygons()
 		schema_pnt   = { 'geometry':'Point',  'properties':{'name':'str' , 'class_id':'int', 'confidence':'float'}}
-		
+
 		with fiona.collection(output_folder+'POINTS.shp', "w", "ESRI Shapefile", schema_pnt, crs=from_epsg(4326)) as output_pnt:
 			for (i,j) in self.detected_crops:
 				(i_ad, j_ad, height, width) = self.detected_crops[(i,j)]['block']
@@ -361,7 +361,7 @@ class Detector(object):
 						transformed_centroid = geometry.Point(self.Rasters.transform*centroid)
 						try:
 							if transformed_contour.difference(clip_polygons).is_empty or not filter_edges:
-								output_pnt.write({'properties': { 'name' : '({},{}): {}'.format(i, j, k), 
+								output_pnt.write({'properties': { 'name' : '({},{}): {}'.format(i, j, k),
 																  'class_id' : class_idx,
 																  'confidence' : float(max(confidence[k]))},
 								            	  'geometry': geometry.mapping(transformed_centroid)})
@@ -377,21 +377,21 @@ class Detector(object):
 	def write_shapefiles(self, output_folder='./', filter_edges=True):
 		"""Writes centroids, contours and block lines to shapefiles.
 
-		Converts every centroid and contour in each block to lon-lat 
+		Converts every centroid and contour in each block to lon-lat
 		coordinates, and writes them to the shapefiles POINTS.shp and
 		CONTOURS.shp respectively. Also saves the boundaries of each
-		block to the shapefile BLOCK_LINES.shp. This method has no 
+		block to the shapefile BLOCK_LINES.shp. This method has no
 		return value.
 
 		Arguments
 		---------
 		output_folder : str (path object), optional
 			Folder in which to store the resulting shapefiles. If it does not
-			exist, it will be created. Default is './', which is the current 
+			exist, it will be created. Default is './', which is the current
 			directory.
 		filter_edges : bool, optional
 			Whether to remove crops which intersect the clipped field edge,
-			default is True. If the clipped field edge is not too close to 
+			default is True. If the clipped field edge is not too close to
 			any crops, we recommend keeping it at the default.
 		"""
 
@@ -427,11 +427,11 @@ class Detector(object):
 								transformed_centroid = geometry.Point(self.Rasters.transform*centroid)
 								try:
 									if transformed_contour.difference(clip_polygons).is_empty or not filter_edges:
-										output_cnt.write({'properties': { 'name' : '({},{}): {}'.format(i, j, k), 
+										output_cnt.write({'properties': { 'name' : '({},{}): {}'.format(i, j, k),
 																		  'class_id' : class_idx,
 																		  'confidence' : float(max(confidence[k]))},
 									            		  'geometry': geometry.mapping(transformed_contour)})
-										output_pnt.write({'properties': { 'name' : '({},{}): {}'.format(i, j, k), 
+										output_pnt.write({'properties': { 'name' : '({},{}): {}'.format(i, j, k),
 																		  'class_id' : class_idx,
 																		  'confidence' : float(max(confidence[k]))},
 										            	  'geometry': geometry.mapping(transformed_centroid)})
@@ -456,12 +456,12 @@ class Detector(object):
 
 		The dictionary detected_crops is saved as is; its contents are not
 		converted to lon-lat coordinates.
-		
+
 		Arguments
 		---------
 		output_folder, str (path object), optional
 			Folder in which to store the resulting shapefile DATA.pickle.
-			If it does not exist, it will be created. Default is './', which 
+			If it does not exist, it will be created. Default is './', which
 			is the current directory.
 		"""
 
@@ -473,12 +473,12 @@ class Detector(object):
 
 	def save_background_to_pickle(self, output_folder='./'):
 		"""Saves the attribute bg_dict to a pickle file BG_DATA.pickle.
-		
+
 		Arguments
 		---------
 		output_folder, str (path object), optional
 			Folder in which to store the resulting shapefile BG_DATA.pickle.
-			If it does not exist, it will be created. Default is './', which 
+			If it does not exist, it will be created. Default is './', which
 			is the current directory.
 		"""
 
@@ -490,4 +490,3 @@ class Detector(object):
 
 		with open(output_folder+'/BACKGROUND_DATA.pickle', 'wb') as bg_file:
 			pickle.dump(self.bg_dict, bg_file)
-

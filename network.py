@@ -19,9 +19,9 @@ __author__ = "Duncan den Bakker"
 def load_network(path, platform):
 	"""Loads a neural network.
 
-	If platform=='linux', the model is loaded from a .h5 file using 
+	If platform=='linux', the model is loaded from a .h5 file using
 	keras.models.load_model(path). If platform=='windows', the model
-	architecture is first loaded from a .json, after which the 
+	architecture is first loaded from a .json, after which the
 	weights are loaded separately.
 
 	Arguments
@@ -42,7 +42,7 @@ def load_network(path, platform):
 		with CustomObjectScope({'GlorotUniform': glorot_uniform()}):
 			with open(path+'/STRUCTURE.json', 'r') as f:
 				json_string = f.read()
-				network = keras_models.model_from_json(json_string)
+				network = models.model_from_json(json_string)
 				network.load_weights(path+'/WEIGHTS.h5')
 
 	return network
@@ -50,7 +50,7 @@ def load_network(path, platform):
 def save_network(network, path):
 	"""Saves a trained network.
 
-	Saves both the entire network structure and weights in one .h5 file, as 
+	Saves both the entire network structure and weights in one .h5 file, as
 	well as a separate .json structure file and .h5 weight file. Only the latter
 	can be loaded on windows due to a bug in keras. A folder is created at path.
 	The files NETWORK.h5, STRUCTURE.json and WEIGHTS.h5 are saved to this folder.
@@ -60,7 +60,7 @@ def save_network(network, path):
 	network : keras model
 		Network to be saved.
 	path : str (path object)
-		Path to folder in which files must be saved. 
+		Path to folder in which files must be saved.
 	"""
 
 	if not os.path.exists(path):
@@ -119,18 +119,18 @@ class NetworkTrainer(object):
 	Attributes
 	----------
 	num_classes : int
-		Number of different classes that the network must be able to 
+		Number of different classes that the network must be able to
 		detect.
 	rgb_size : 2-tuple
-		Spatial dimensions of RGB input of network. Keep at (64,64) to 
+		Spatial dimensions of RGB input of network. Keep at (64,64) to
 		maintain compatibility in FCN network.
 	dem_size : 2-tuple
 		Spatial dimensions of DEM input of network. Default is (16,16).
 		In general there is no need to change this.
 	network : keras model
-		Detection network object. 
+		Detection network object.
 	data_generator : iterator object
-		Object yielding input-output pairs to train the network on. 
+		Object yielding input-output pairs to train the network on.
 		Must be initialized by the user with the method set_training_data.
 
 	Methods
@@ -154,7 +154,7 @@ class NetworkTrainer(object):
 		num_classes : int (>=2)
 			Number of different classes network should be able to distinguish.
 		"""
-		
+
 		self.num_classes = num_classes
 		self.rgb_size = (64,64)
 		self.dem_size = (16,16)
@@ -228,17 +228,17 @@ class NetworkTrainer(object):
 		"""Compile model with Adam optimizer.
 
 		Use categorical crossentropy loss function for the class output,
-		and mean squared error for the mask output. The total loss is the 
-		weighted sum class_loss + mask_loss_weight*mask_loss. This method 
+		and mean squared error for the mask output. The total loss is the
+		weighted sum class_loss + mask_loss_weight*mask_loss. This method
 		has no return value, it compiles the attribute self.network.
 
 		Arguments
 		---------
 		learning_rate : float
-			Learning rate of Adam optimizer. We observed the keras default of 
+			Learning rate of Adam optimizer. We observed the keras default of
 			1e-3 is too big. The default value is 1e-4.
 		mask_loss_weight : float
-			Weight of mask loss function compared to class loss function. 
+			Weight of mask loss function compared to class loss function.
 		"""
 
 		losses = {"output_class": 'categorical_crossentropy', "output_mask":'mse'}
@@ -249,7 +249,7 @@ class NetworkTrainer(object):
 
 	def set_training_data(self, data_path, batch_size=64):
 		"""Initializes a generator object.
-		
+
 		This method has no return value, it assigns an iterator object
 		to the attribute set_training_data.
 
@@ -314,7 +314,7 @@ class NetworkTrainer(object):
 				rgb_array = rgb_flow.next()
 				dem_array = dem_flow.next()
 				msk_array = msk_flow.next()
-				yield [rgb_array[0], dem_array[0]], [rgb_array[1], msk_array[0]] 
+				yield [rgb_array[0], dem_array[0]], [rgb_array[1], msk_array[0]]
 
 		self.data_generator = DataIterator(gen_object, data_path+'/RGB/', data_path+'/DEM/', data_path+'/MSK/')
 
