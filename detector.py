@@ -85,6 +85,25 @@ class Detector(object):
 		Saves self.detected_crops to pickle file.
 	save_background_to_pickle(output_folder='./')
 		Saves self.bg_dict to pickle file.
+
+	Example
+	-------
+	============================= example.py ==================================
+	>>> import settings, detector
+	>>>
+	>>> Settings = settings.<some_settings_class>(<some keyword arguments>)
+	>>>
+	>>> D = detector.Detector(<path_to_rgb_recording>, 
+						  	  <path_to_dem_recording>,
+						  	  <path_to_clipped_field>, 
+						  	  Settings, platform=<linux or windows>)
+	>>>
+	>>> D.detect(max_count=10)
+	>>> D.remove_duplicate_crops()
+	>>>
+	>>> D.write_points(<output_folder>)
+	>>> D.write_shapefiles(<output_folder>)
+	===========================================================================
 	"""
 
 	def __init__(self, rgb_path, dem_path, clip_path, Settings, platform='linux'):
@@ -217,6 +236,10 @@ class Detector(object):
 		bg_output : list of length 2
 			List containing background boxes and confidence scores. If
 			get_background==False, this is a list containing two empty lists.
+
+		Raises
+		------
+		IndexError : if the input block is completely black (no data).
 		"""
 
 		if rgb_block.mean() <= 1e-6:
@@ -314,7 +337,10 @@ class Detector(object):
 		in the dictionary attribute detected_crops.
 		"""
 
-		self.detected_crops = processing.process_overlap(self.detected_crops, self.num_classes, self.Settings.block_overlap, self.Settings.centroid_distance)
+		self.detected_crops = processing.process_overlap(self.detected_crops, 
+														 self.num_classes, 
+														 self.Settings.block_overlap, 
+														 self.Settings.centroid_distance)
 
 	def write_points(self, output_folder='./', filter_edges=True):
 		"""Writes detected centroids to a shapefile POINTS.shp.
@@ -393,6 +419,11 @@ class Detector(object):
 			Whether to remove crops which intersect the clipped field edge,
 			default is True. If the clipped field edge is not too close to
 			any crops, we recommend keeping it at the default.
+
+		Raises
+		------
+		IndexError : if the dictionary storing detected crops is still empty.
+			In this case, the method self.detect() has not been run.
 		"""
 
 		if len(self.detected_crops) == 0:
@@ -480,6 +511,11 @@ class Detector(object):
 			Folder in which to store the resulting shapefile BG_DATA.pickle.
 			If it does not exist, it will be created. Default is './', which
 			is the current directory.
+
+		Raises
+		------
+		IndexError : if no background boxes are saved. The method self.detect should
+			be run with the keyword argument get_background=True.
 		"""
 
 		if not os.path.exists(output_folder):
