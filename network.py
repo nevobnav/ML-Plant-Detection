@@ -348,6 +348,7 @@ if __name__ == "__main__":
 
 	Trainer = NetworkTrainer(2)
 	Trainer.compile()
-	Trainer.set_training_data(data_path)
-	Trainer.train(1,1)
-	Trainer.save('./Test Network')
+	print(Trainer.network.summary())
+	# Trainer.set_training_data(data_path)
+	# Trainer.train(1,1)
+	# Trainer.save('./Test Network')
